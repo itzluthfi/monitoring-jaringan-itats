@@ -1,0 +1,5 @@
+{
+  "name": "WiFi Density Monitor & Predictor",
+  "description": "Monitoring and predicting WiFi congestion hours using MikroTik API and AI analysis.",
+  "requestFramePermissions": []
+}
