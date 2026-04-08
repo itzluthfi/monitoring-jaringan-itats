@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Wifi, 
   Users, 
@@ -32,27 +32,8 @@ import {
   Terminal,
   Star,
   Edit,
-  X,
-  Search,
-  ArrowRightLeft,
-  CornerDownRight,
-  AlertCircle,
-  Bell,
-  BarChart2,
-  Gauge,
-  Filter,
-  ChevronUp,
-  WifiOff,
-  Zap,
-  Shield,
-  Menu,
-  Moon,
-  Sun,
-  Mail,
-  ExternalLink
+  X
 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
-import Swal from 'sweetalert2';
 import { 
   LineChart, 
   Line, 
@@ -62,13 +43,7 @@ import {
   Tooltip, 
   ResponsiveContainer,
   AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  Cell,
-  Legend,
-  PieChart,
-  Pie
+  Area
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
@@ -77,8 +52,6 @@ import { twMerge } from 'tailwind-merge';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import LoginPage from './pages/LoginPage';
-import PublicPage from './pages/PublicPage';
 
 // Fix Leaflet marker icon issue
 // @ts-ignore
@@ -164,18 +137,6 @@ interface TopologyNode {
   children?: TopologyNode[];
 }
 
-interface TrafficRates {
-  [ifaceName: string]: { txSpeed: number; rxSpeed: number; txPacketPs: number; rxPacketPs: number };
-}
-
-const formatSpeed = (bps: number) => {
-  if (bps === undefined || isNaN(bps)) return '0 bps';
-  if (bps >= 1000000000) return (bps / 1000000000).toFixed(1) + ' Gbps';
-  if (bps >= 1000000) return (bps / 1000000).toFixed(1) + ' Mbps';
-  if (bps >= 1000) return (bps / 1000).toFixed(1) + ' kbps';
-  return Math.round(bps) + ' bps';
-};
-
 function MapUpdater({ center, zoom }: { center: [number, number], zoom: number }) {
   const map = useMap();
   useEffect(() => {
@@ -185,67 +146,6 @@ function MapUpdater({ center, zoom }: { center: [number, number], zoom: number }
 }
 
 export default function App() {
-  // ── Auth & Routing ────────────────────────────────────────────────────────
-  const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('auth_token'));
-  const [authUser, setAuthUser] = useState<string | null>(() => localStorage.getItem('auth_user'));
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
-
-  useEffect(() => {
-    const handlePop = () => setCurrentPath(window.location.pathname);
-    window.addEventListener('popstate', handlePop);
-    return () => window.removeEventListener('popstate', handlePop);
-  }, []);
-
-  const navigate = (path: string) => {
-    window.history.pushState({}, '', path);
-    setCurrentPath(path);
-  };
-
-  const handleLogin = (token: string, username: string) => {
-    setAuthToken(token);
-    setAuthUser(username);
-    navigate('/admin');
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    setAuthToken(null);
-    setAuthUser(null);
-    navigate('/');
-  };
-
-  // Helper: fetch with auth header
-  const authFetch = (url: string, options: RequestInit = {}) => {
-    return fetch(url, {
-      ...options,
-      headers: {
-        ...(options.headers || {}),
-        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
-      },
-    }).then(res => {
-      if (res.status === 401) { handleLogout(); }
-      return res;
-    });
-  };
-
-  // Route: Public page
-  if (currentPath === '/' || currentPath === '/public') {
-    return <PublicPage onGoToLogin={() => navigate('/login')} />;
-  }
-
-  // Route: Login page
-  if (currentPath === '/login') {
-    if (authToken) { navigate('/admin'); return null; }
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
-  // Route: Admin — require auth
-  if (!authToken) {
-    navigate('/login');
-    return null;
-  }
-
   const [currentCount, setCurrentCount] = useState<number | null>(null);
   const [history, setHistory] = useState<WifiStat[]>([]);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
@@ -254,7 +154,7 @@ export default function App() {
   const [selectedFloor, setSelectedFloor] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [view, setView] = useState<'dashboard' | 'map' | 'topology' | 'docs' | 'devices' | 'settings' | 'vlan'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'map' | 'topology' | 'docs' | 'devices'>('dashboard');
   const [topology, setTopology] = useState<TopologyNode | null>(null);
   const [devices, setDevices] = useState<MikroTikDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<MikroTikDevice | null>(null);
@@ -265,69 +165,20 @@ export default function App() {
   const [isAddingDevice, setIsAddingDevice] = useState(false);
   const [isEditingDevice, setIsEditingDevice] = useState(false);
   const [editingDevice, setEditingDevice] = useState<MikroTikDevice | null>(null);
-  const [newDevice, setNewDevice] = useState({ name: '', host: '', user: '', password: '', port: 8728, lat: '', lng: '' });
+  const [newDevice, setNewDevice] = useState({ name: '', host: '', user: '', password: '', port: 8728 });
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   const [command, setCommand] = useState('');
   const [commandResult, setCommandResult] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
-  const [selectedDashboardDevice, setSelectedDashboardDevice] = useState<string>('all');
-  
-  const [interfaceTraffic, setInterfaceTraffic] = useState<TrafficRates>({});
-  const prevInterfacesRef = useRef<any[]>([]);
-  const lastPollTimeRef = useRef<number>(Date.now());
-  const [interfaceSearch, setInterfaceSearch] = useState('');
-  const [dynamicTopology, setDynamicTopology] = useState<any>(null);
-  const [topoDeviceFilter, setTopoDeviceFilter] = useState<string>('all');
-  const [topoLoading, setTopoLoading] = useState(false);
-  const [topoLastUpdated, setTopoLastUpdated] = useState<Date | null>(null);
-  const [expandedAP, setExpandedAP] = useState<string | null>(null);
-  const [mapDeviceFilter, setMapDeviceFilter] = useState<string>('all');
-
-  // Notifications
-  const [dbNotifications, setDbNotifications] = useState<any[]>([]);
-  const [showNotifPanel, setShowNotifPanel] = useState(false);
-
-  // VLAN Traffic
-  const [vlanTraffic, setVlanTraffic] = useState<any[]>([]);
-  const [vlanTrafficHistory, setVlanTrafficHistory] = useState<Record<string, any[]>>({});
-  const [vlanDeviceFilter, setVlanDeviceFilter] = useState<string>('all');
-  const [vlanSearch, setVlanSearch] = useState('');
-  const [vlanStatus, setVlanStatus] = useState('all');
-  const [vlanSort, setVlanSort] = useState('highest-rx');
-  const [vlanLoading, setVlanLoading] = useState(false);
-
-  // Queues / Bandwidth
-  const [queues, setQueues] = useState<any[]>([]);
-  const [queuesLoading, setQueuesLoading] = useState(false);
-  const [showAddQueue, setShowAddQueue] = useState(false);
-  const [showEditQueue, setShowEditQueue] = useState<any>(null);
-  const [newQueue, setNewQueue] = useState({ name: '', target: '', maxLimit: '', burstLimit: '', comment: '' });
-  const [deviceTab, setDeviceTab] = useState<'interfaces'|'queues'>('interfaces');
-
-  // Topology modals
-  const [selectedAPNode, setSelectedAPNode] = useState<any>(null);
-  const [selectedSwitchNode, setSelectedSwitchNode] = useState<any>(null);
-
-  // Layout & Theme
-  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
-
-  // Notification Detail View
-  const [selectedNotif, setSelectedNotif] = useState<any>(null);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
 
   const fetchData = async () => {
     setRefreshing(true);
     try {
       const [statusRes, historyRes, predictRes, campusRes, topologyRes, devicesRes, statsRes] = await Promise.all([
-        fetch(`/api/current-status?device=${selectedDashboardDevice}`),
-        fetch(`/api/history?device=${selectedDashboardDevice}`),
-        fetch(`/api/prediction?device=${selectedDashboardDevice}`),
+        fetch('/api/current-status'),
+        fetch('/api/history'),
+        fetch('/api/prediction'),
         fetch('/api/campus-map'),
         fetch('/api/topology'),
         fetch('/api/mikrotiks'),
@@ -383,9 +234,6 @@ export default function App() {
       const interfacesData = await interfacesRes.json();
       setDeviceStatus(statusData);
       setDeviceInterfaces(interfacesData);
-      prevInterfacesRef.current = interfacesData;
-      lastPollTimeRef.current = Date.now();
-      setInterfaceTraffic({});
     } catch (err) {
       setDeviceStatus({ online: false, error: 'Connection failed' });
     }
@@ -415,10 +263,8 @@ export default function App() {
       name: device.name,
       host: device.host,
       user: device.user,
-      password: '',
-      port: device.port,
-      lat: (device as any).lat ?? '',
-      lng: (device as any).lng ?? ''
+      password: '', // Don't pre-fill password for security
+      port: device.port
     });
     setIsEditingDevice(true);
   };
@@ -508,18 +354,15 @@ export default function App() {
     }
   };
 
-  const handleExec = async (id: number, overrideCmd?: string) => {
-    const cmdToRun = overrideCmd || command;
-    if (!cmdToRun) return;
+  const handleExec = async (id: number) => {
+    if (!command) return;
     setIsExecuting(true);
     setCommandResult(null);
-    if (overrideCmd) setCommand(overrideCmd); // Also update the input for visual parity
-
     try {
       const res = await fetch(`/api/mikrotiks/${id}/exec`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: cmdToRun })
+        body: JSON.stringify({ command })
       });
       const data = await res.json();
       setCommandResult(JSON.stringify(data.result, null, 2));
@@ -534,306 +377,12 @@ export default function App() {
     fetchData();
     const interval = setInterval(fetchData, 60000); // Refresh every minute
     return () => clearInterval(interval);
-  }, [selectedDashboardDevice]);
-
-  useEffect(() => {
-    if (view !== 'devices' || !selectedDevice) return;
-    
-    let isSubscribed = true;
-    const pollInterfaces = async () => {
-      try {
-        const res = await fetch(`/api/mikrotiks/${selectedDevice.id}/interfaces`);
-        const data = await res.json();
-        
-        if (!isSubscribed) return;
-        
-        const now = Date.now();
-        const deltaSec = (now - lastPollTimeRef.current) / 1000;
-        
-        if (deltaSec > 0) {
-          const newRates: TrafficRates = {};
-          data.forEach((iface: any) => {
-            const prev = prevInterfacesRef.current.find(p => p.name === iface.name);
-            if (prev && iface['tx-byte'] && prev['tx-byte']) {
-              const txBps = ((Number(iface['tx-byte']) - Number(prev['tx-byte'])) * 8) / deltaSec;
-              const rxBps = ((Number(iface['rx-byte']) - Number(prev['rx-byte'])) * 8) / deltaSec;
-              const txPps = (Number(iface['tx-packet']) - Number(prev['tx-packet'])) / deltaSec;
-              const rxPps = (Number(iface['rx-packet']) - Number(prev['rx-packet'])) / deltaSec;
-              
-              newRates[iface.name] = {
-                txSpeed: Math.max(0, txBps),
-                rxSpeed: Math.max(0, rxBps),
-                txPacketPs: Math.max(0, Math.round(txPps)),
-                rxPacketPs: Math.max(0, Math.round(rxPps))
-              };
-            }
-          });
-          setInterfaceTraffic(prevRates => ({...prevRates, ...newRates}));
-        }
-        
-        prevInterfacesRef.current = data;
-        lastPollTimeRef.current = now;
-        setDeviceInterfaces(data);
-      } catch (err) {
-        console.error("Polling error", err);
-      }
-    };
-    
-    const intervalId = setInterval(pollInterfaces, 2000);
-    return () => {
-      isSubscribed = false;
-      clearInterval(intervalId);
-    };
-  }, [selectedDevice, view]);
+  }, []);
 
   const chartData = history.map(item => ({
     time: format(new Date(item.timestamp), 'HH:mm'),
     count: item.client_count
   }));
-
-  const fetchDynamicTopology = async () => {
-    setTopoLoading(true);
-    try {
-      const res = await fetch(`/api/topology/dynamic?device=${topoDeviceFilter}`);
-      const data = await res.json();
-      setDynamicTopology(data);
-      setTopoLastUpdated(new Date());
-    } catch (err) {
-      console.error('Topology fetch error', err);
-    } finally {
-      setTopoLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (view !== 'topology') return;
-    fetchDynamicTopology();
-    const interval = setInterval(fetchDynamicTopology, 15000);
-    return () => clearInterval(interval);
-  }, [view, topoDeviceFilter]);
-
-  // ── Notifications ──────────────────────────────────────────────────────────
-  const fetchNotifications = async () => {
-    try {
-      const res = await fetch('/api/notifications');
-      const data = await res.json();
-      setDbNotifications(Array.isArray(data) ? data : []);
-    } catch (err) { console.error('Notif fetch error', err); }
-  };
-
-  useEffect(() => {
-    fetchNotifications();
-    const iv = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const dismissNotif = async (id: number) => {
-    await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
-    setDbNotifications(prev => prev.filter(n => n.id !== id));
-  };
-  const markAllRead = async () => {
-    await fetch('/api/notifications/read-all', { method: 'PUT' });
-    setDbNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-  };
-  const clearAllNotifs = async () => {
-    await fetch('/api/notifications', { method: 'DELETE' });
-    setDbNotifications([]);
-  };
-  const unreadCount = dbNotifications.filter(n => !n.is_read).length;
-
-  // ── VLAN Traffic ───────────────────────────────────────────────────────────
-  const fetchVlanTraffic = async (deviceId: string) => {
-    if (!deviceId) return;
-    setVlanLoading(true);
-    try {
-      const res = await fetch(`/api/mikrotiks/${deviceId}/vlan-traffic`);
-      const data = await res.json();
-      const arr = Array.isArray(data) ? data : [];
-      setVlanTraffic(arr);
-      
-      setVlanTrafficHistory(prev => {
-        const next = { ...prev };
-        const nowMs = Date.now();
-        const nowStr = new Date(nowMs).toLocaleTimeString('id-ID', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        
-        arr.forEach((v: any) => {
-          if (!next[v.name]) next[v.name] = [];
-          
-          let rxRateBps = Number(v['rx-rate'] || 0);
-          let txRateBps = Number(v['tx-rate'] || 0);
-          
-          const currentRxByte = Number(v['rx-byte'] || 0);
-          const currentTxByte = Number(v['tx-byte'] || 0);
-          
-          // Fallback to calculating rate from bytes delta if raw rate is 0
-          if (rxRateBps === 0 && txRateBps === 0 && next[v.name].length > 0) {
-            const lastPoint = next[v.name][next[v.name].length - 1];
-            if (lastPoint.timestamp) {
-              const timeDiffSeconds = (nowMs - lastPoint.timestamp) / 1000;
-              if (timeDiffSeconds > 0) {
-                const rxDiff = currentRxByte - lastPoint.rawRxByte;
-                const txDiff = currentTxByte - lastPoint.rawTxByte;
-                if (rxDiff > 0) rxRateBps = (rxDiff * 8) / timeDiffSeconds;
-                if (txDiff > 0) txRateBps = (txDiff * 8) / timeDiffSeconds;
-              }
-            }
-          }
-
-          next[v.name] = [...next[v.name], {
-            time: nowStr,
-            timestamp: nowMs,
-            rx: Math.round(rxRateBps / 1024), 
-            tx: Math.round(txRateBps / 1024),
-            rawRx: rxRateBps, 
-            rawTx: txRateBps,
-            rawRxByte: currentRxByte, 
-            rawTxByte: currentTxByte
-          }];
-          if (next[v.name].length > 40) next[v.name].shift(); // Keep last 40 history points
-        });
-        return next;
-      });
-    } catch (err) { console.error('VLAN fetch error', err); }
-    finally { setVlanLoading(false); }
-  };
-
-  useEffect(() => {
-    if (!vlanDeviceFilter) return;
-    fetchVlanTraffic(vlanDeviceFilter);
-    const iv = setInterval(() => fetchVlanTraffic(vlanDeviceFilter), 10000);
-    return () => clearInterval(iv);
-  }, [vlanDeviceFilter]);
-
-  // ── Queues ─────────────────────────────────────────────────────────────────
-  const fetchQueues = async () => {
-    if (!selectedDevice) return;
-    setQueuesLoading(true);
-    try {
-      const res = await fetch(`/api/mikrotiks/${selectedDevice.id}/queues`);
-      const data = await res.json();
-      setQueues(Array.isArray(data) ? data : []);
-    } catch (err) { console.error('Queue fetch error', err); }
-    finally { setQueuesLoading(false); }
-  };
-
-  useEffect(() => {
-    if (view !== 'devices' || deviceTab !== 'queues' || !selectedDevice) return;
-    fetchQueues();
-    const iv = setInterval(fetchQueues, 8000);
-    return () => clearInterval(iv);
-  }, [view, deviceTab, selectedDevice]);
-
-  const handleAddQueue = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDevice) return;
-    try {
-      await fetch(`/api/mikrotiks/${selectedDevice.id}/queues`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newQueue)
-      });
-      setShowAddQueue(false);
-      setNewQueue({ name: '', target: '', maxLimit: '', burstLimit: '', comment: '' });
-      fetchQueues();
-    } catch (err) { console.error('Add queue error', err); }
-  };
-
-  const handleEditQueue = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDevice || !showEditQueue) return;
-    try {
-      await fetch(`/api/mikrotiks/${selectedDevice.id}/queues/${showEditQueue.id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: showEditQueue.name,
-          target: showEditQueue.target,
-          maxLimit: showEditQueue.maxLimit,
-          comment: showEditQueue.comment
-        })
-      });
-      setShowEditQueue(null);
-      fetchQueues();
-    } catch (err) { console.error('Edit queue error', err); }
-  };
-
-
-  const toggleQueue = async (qid: string, disabled: string, qname: string) => {
-    if (!selectedDevice) return;
-    const isNowDisabled = disabled !== 'true'; // will we be disabling?
-    const actionLabel = isNowDisabled ? 'Disable' : 'Enable';
-    const result = await Swal.fire({
-      title: `${actionLabel} Queue?`,
-      text: `Queue "${qname}" akan di-${actionLabel.toLowerCase()}.`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: isNowDisabled ? '#ef4444' : '#10b981',
-      cancelButtonColor: '#3f3f46',
-      confirmButtonText: `Ya, ${actionLabel}`,
-      cancelButtonText: 'Batal',
-      background: '#18181b',
-      color: '#e4e4e7',
-    });
-    if (!result.isConfirmed) return;
-
-    const newDisabled = isNowDisabled ? 'true' : 'false';
-    try {
-      await fetch(`/api/mikrotiks/${selectedDevice.id}/queues/${qid}/toggle`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disabled: newDisabled })
-      });
-      toast.success(`Queue "${qname}" berhasil di-${actionLabel.toLowerCase()}kan`, {
-        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
-      });
-      fetchQueues();
-    } catch (err) {
-      toast.error('Gagal mengubah status queue', {
-        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
-      });
-    }
-  };
-
-  const deleteQueue = async (qid: string, qname: string) => {
-    if (!selectedDevice) return;
-    const result = await Swal.fire({
-      title: 'Hapus Queue?',
-      html: `Queue <b class="text-red-400">"${qname}"</b> akan dihapus permanen.`,
-      icon: 'error',
-      showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      cancelButtonColor: '#3f3f46',
-      confirmButtonText: 'Ya, Hapus!',
-      cancelButtonText: 'Batal',
-      background: '#18181b',
-      color: '#e4e4e7',
-    });
-    if (!result.isConfirmed) return;
-
-    try {
-      await fetch(`/api/mikrotiks/${selectedDevice.id}/queues/${qid}`, { method: 'DELETE' });
-      toast.success(`Queue "${qname}" berhasil dihapus`, {
-        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
-      });
-      fetchQueues();
-    } catch (err) {
-      toast.error('Gagal menghapus queue', {
-        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
-      });
-    }
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-    if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-    if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
-    return `${bytes} B`;
-  };
-
-  const formatBps = (bps: number) => {
-    if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} Mbps`;
-    if (bps >= 1e3) return `${(bps / 1e3).toFixed(1)} Kbps`;
-    return `${bps} bps`;
-  };
-
-
 
   if (loading) {
     return (
@@ -847,192 +396,70 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-zinc-100 font-sans selection:bg-emerald-500/30 flex overflow-hidden">
-      {/* Global Toast Notifications */}
-      <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
-
-      {/* Notification Detail Modal */}
-      <AnimatePresence>
-        {selectedNotif && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedNotif(null)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-zinc-900 border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
-            >
-              {/* Header by type */}
-              <div className={cn(
-                "px-8 py-5 border-b border-white/10 flex items-center gap-4",
-                selectedNotif.type === 'critical' ? 'bg-red-500/10' :
-                selectedNotif.type === 'warning' ? 'bg-amber-500/10' : 'bg-blue-500/10'
-              )}>
-                <div className={cn(
-                  "w-10 h-10 rounded-xl flex items-center justify-center border",
-                  selectedNotif.type === 'critical' ? 'bg-red-500/20 border-red-500/30 text-red-400' :
-                  selectedNotif.type === 'warning' ? 'bg-amber-500/20 border-amber-500/30 text-amber-400' : 'bg-blue-500/20 border-blue-500/30 text-blue-400'
-                )}>
-                  <Bell className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-zinc-500">{selectedNotif.type} · {selectedNotif.device_name || 'System'}</p>
-                  <h3 className="text-base font-bold mt-0.5">{selectedNotif.title}</h3>
-                </div>
-                <button onClick={() => setSelectedNotif(null)} className="p-2 rounded-xl hover:bg-white/10 transition-colors text-zinc-500">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {/* Body */}
-              <div className="px-8 py-6 space-y-4">
-                <p className="text-sm text-zinc-300 leading-relaxed">{selectedNotif.message}</p>
-                <div className="flex items-center gap-2 pt-3 border-t border-white/5">
-                  <Clock className="w-3.5 h-3.5 text-zinc-600" />
-                  <p className="text-xs text-zinc-600 font-mono">
-                    {new Date(selectedNotif.created_at).toLocaleString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
-              </div>
-              <div className="px-8 pb-6">
-                <button
-                  onClick={() => setSelectedNotif(null)}
-                  className="w-full py-3 bg-white/5 border border-white/10 rounded-2xl text-sm font-bold hover:bg-white/10 transition-all"
-                >
-                  Tutup
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Sidebar ── */}
-      <div className={cn(
-        "fixed md:relative z-50 h-screen transition-all duration-300 border-r border-white/5 bg-black/40 backdrop-blur-xl flex flex-col flex-shrink-0",
-        isSidebarOpen ? "w-64 translate-x-0" : "-translate-x-full md:translate-x-0 md:w-20"
-      )}>
-        <div className="h-20 flex items-center justify-center border-b border-white/5 flex-shrink-0">
-          <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20">
-            <Wifi className="w-6 h-6 text-emerald-500" />
-          </div>
-          {isSidebarOpen && (
-            <div className="ml-3 font-bold tracking-tight whitespace-nowrap hidden md:block">ITATS Monitor</div>
-          )}
-        </div>
-        
-        <nav className="flex-1 overflow-y-auto py-6 flex flex-col gap-2 px-3 custom-scrollbar">
-          {[
-            { id: 'dashboard', icon: Gauge, label: 'Dashboard' },
-            { id: 'vlan', icon: Layers, label: 'VLAN Traffic' },
-            { id: 'map', icon: MapPin, label: 'Campus Map' },
-            { id: 'devices', icon: Server, label: 'Devices' },
-            { id: 'topology', icon: Network, label: 'Topology' },
-            { id: 'docs', icon: BookOpen, label: 'Docs' }
-          ].map(item => (
-            <button
-              key={item.id}
-              onClick={() => { setView(item.id as any); if (window.innerWidth < 768) setIsSidebarOpen(false); }}
-              className={cn(
-                "flex items-center gap-3 px-3 py-3 rounded-2xl transition-all",
-                view === item.id ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5",
-                !isSidebarOpen && "md:justify-center"
-              )}
-              title={item.label}
-            >
-              <item.icon className="w-5 h-5 flex-shrink-0" />
-              {isSidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
-            </button>
-          ))}
-        </nav>
-        
-        <div className="p-3 border-t border-white/5 flex-shrink-0">
-          <button
-            onClick={() => { setView('settings'); if (window.innerWidth < 768) setIsSidebarOpen(false); }}
-            className={cn(
-              "flex items-center gap-3 px-3 py-3 w-full rounded-2xl transition-all",
-              view === 'settings' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5",
-              !isSidebarOpen && "md:justify-center"
-            )}
-            title="Settings"
-          >
-            <Settings className="w-5 h-5 flex-shrink-0" />
-            {isSidebarOpen && <span className="text-sm font-medium pl-1">Settings</span>}
-          </button>
-        </div>
-      </div>
-      
-      {/* ── Main Content Area ── */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        
-        {/* Header */}
-        <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl h-20 flex-shrink-0 flex items-center justify-between px-6 z-40">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all active:scale-95 text-zinc-400"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <h2 className="text-lg font-bold capitalize hidden sm:block">{view.replace('-', ' ')}</h2>
+    <div className="min-h-screen bg-[#0A0A0A] text-zinc-100 font-sans selection:bg-emerald-500/30">
+      {/* Header */}
+      <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20">
+              <Wifi className="w-6 h-6 text-emerald-500" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">ITATS WiFi Monitor</h1>
+              <p className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Campus Network Node v1.0</p>
+            </div>
           </div>
           
-          <div className="flex items-center gap-3">
-            {/* Notification Bell */}
-            <div className="relative">
-              <button
-                onClick={() => { setShowNotifPanel(!showNotifPanel); if (unreadCount > 0) markAllRead(); }}
-                className="relative p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all active:scale-95"
-              >
-                <Bell className="w-5 h-5 text-zinc-400" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
+          <div className="flex items-center gap-4">
+            <nav className="hidden md:flex items-center bg-white/5 border border-white/10 rounded-full p-1">
+              <button 
+                onClick={() => setView('dashboard')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-xs font-medium transition-all",
+                  view === 'dashboard' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-zinc-500 hover:text-zinc-300"
                 )}
+              >
+                Dashboard
               </button>
+              <button 
+                onClick={() => setView('map')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-xs font-medium transition-all",
+                  view === 'map' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                Campus Map
+              </button>
+              <button 
+                onClick={() => setView('topology')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-xs font-medium transition-all",
+                  view === 'topology' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                Topology
+              </button>
+              <button 
+                onClick={() => setView('docs')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-xs font-medium transition-all",
+                  view === 'docs' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                Knowledge
+              </button>
+              <button 
+                onClick={() => setView('devices')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-xs font-medium transition-all",
+                  view === 'devices' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                Devices
+              </button>
+            </nav>
 
-              {showNotifPanel && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifPanel(false)} />
-                  <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                      <h3 className="text-sm font-bold">Notifikasi</h3>
-                      <div className="flex gap-2">
-                        <button onClick={markAllRead} className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors">Baca Semua</button>
-                        <span className="text-zinc-700">|</span>
-                        <button onClick={clearAllNotifs} className="text-[10px] text-red-500/70 hover:text-red-400 transition-colors">Hapus Semua</button>
-                      </div>
-                    </div>
-                    <div className="max-h-80 overflow-y-auto">
-                      {dbNotifications.length === 0 ? (
-                        <div className="py-8 text-center text-zinc-600 text-sm">Tidak ada notifikasi</div>
-                      ) : dbNotifications.map(n => (
-                        <div key={n.id} className={cn("flex gap-3 px-4 py-3 border-b border-white/5 transition-colors hover:bg-white/5", !n.is_read && "bg-white/[0.03]")}>
-                          <div className={cn("w-2 h-2 rounded-full flex-shrink-0 mt-1.5",
-                            n.type === 'critical' ? 'bg-red-500' : n.type === 'warning' ? 'bg-amber-500' : 'bg-blue-500')} />
-                          <div className="flex-1 min-w-0">
-                            <p className={cn("text-xs font-bold", n.type === 'critical' ? 'text-red-400' : n.type === 'warning' ? 'text-amber-400' : 'text-blue-400')}>{n.title}</p>
-                            <p className="text-[10px] text-zinc-500 mt-0.5 leading-relaxed">{n.message}</p>
-                            <p className="text-[9px] text-zinc-700 mt-1">{new Date(n.created_at).toLocaleString('id-ID')}</p>
-                          </div>
-                          <button onClick={() => dismissNotif(n.id)} className="text-zinc-700 hover:text-red-400 transition-colors flex-shrink-0">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <button
+            <button 
               onClick={fetchData}
               disabled={refreshing}
               className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50"
@@ -1040,11 +467,12 @@ export default function App() {
               <RefreshCw className={cn("w-5 h-5 text-zinc-400", refreshing && "animate-spin")} />
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
-          <AnimatePresence mode="wait">
-            {view === 'dashboard' ? (
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <AnimatePresence mode="wait">
+          {view === 'dashboard' ? (
             <motion.div 
               key="dashboard"
               initial={{ opacity: 0, x: -20 }}
@@ -1052,56 +480,28 @@ export default function App() {
               exit={{ opacity: 0, x: 20 }}
               className="space-y-8"
             >
-              {/* Dashboard Filters and Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold text-white">Network Overview</h2>
-                  <p className="text-sm text-zinc-500">Live monitoring data from MikroTik</p>
-                </div>
-                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-1.5 px-3">
-                  <span className="text-xs text-zinc-400 font-medium">Source:</span>
-                  <select
-                    value={selectedDashboardDevice}
-                    onChange={(e) => setSelectedDashboardDevice(e.target.value)}
-                    className="bg-transparent border-none text-white text-sm hover:text-emerald-400 transition-colors focus:outline-none cursor-pointer"
-                  >
-                    <option value="all" className="bg-zinc-900">Semua (General)</option>
-                    {devices.map(d => (
-                      <option key={d.id} value={d.name} className="bg-zinc-900">{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* NOC Top Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Top Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatCard 
                   icon={<Users className="w-5 h-5" />}
-                  label="Active Edge Users"
+                  label="Total Campus Clients"
                   value={currentCount ?? 0}
-                  trend="Live Connected Endpoints"
+                  trend="+12% from last hour"
                   color="emerald"
                 />
                 <StatCard 
                   icon={<Activity className="w-5 h-5" />}
-                  label="Total User Load"
-                  value={currentCount ? `${Math.min(100, Math.floor((currentCount / 500) * 100))}%` : '0%'}
-                  trend="Capacity Utilization"
+                  label="Network Load"
+                  value={currentCount ? `${Math.min(100, Math.floor((currentCount / 150) * 100))}%` : '0%'}
+                  trend="Stable"
                   color="blue"
                 />
                 <StatCard 
-                  icon={<Server className="w-5 h-5" />}
-                  label="Core Health Status"
-                  value={globalStats ? (globalStats.offline > 0 ? "Degraded" : "Optimal") : "..."}
-                  trend={globalStats ? `${globalStats.online} Cores Up, ${globalStats.offline} Down` : "Telemetry Health"}
-                  color={globalStats?.offline > 0 ? "amber" : "emerald"}
-                />
-                <StatCard 
-                  icon={<AlertCircle className="w-5 h-5" />}
-                  label="Active Incident"
-                  value={notifications.length}
-                  trend={notifications.length ? "Detected Issues" : "Clear Sky"}
-                  color={notifications.length > 0 ? "red" : "emerald"}
+                  icon={<Clock className="w-5 h-5" />}
+                  label="Next Peak Hour"
+                  value={prediction?.rawanHours?.[0]?.hour || 'N/A'}
+                  trend="Estimated by AI"
+                  color="amber"
                 />
               </div>
 
@@ -1125,8 +525,8 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="w-full" style={{ minHeight: '350px' }}>
-                      <ResponsiveContainer width="100%" aspect={2.5}>
+                    <div className="h-[350px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData}>
                           <defs>
                             <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
@@ -1179,7 +579,7 @@ export default function App() {
                     </h3>
                     <div className="space-y-4">
                       {history.slice(0, 5).map((item, idx) => (
-                        <div key={item.id ?? `snap-${idx}`} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                        <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
                           <div className="flex items-center gap-4">
                             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-mono text-zinc-400">
                               {idx + 1}
@@ -1239,93 +639,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
-
-              {/* ── Notification Table ───────────────────────────── */}
-              <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                      <Bell className="w-5 h-5 text-red-400" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold">Log Notifikasi</h2>
-                      <p className="text-xs text-zinc-500">{dbNotifications.length} entri · {unreadCount} belum dibaca</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={markAllRead} className="px-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all">Baca Semua</button>
-                    <button onClick={clearAllNotifs} className="px-3 py-1.5 text-xs bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl hover:bg-red-500/20 transition-all">Hapus Semua</button>
-                  </div>
-                </div>
-                {dbNotifications.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-zinc-600">
-                    <Bell className="w-8 h-8 mb-2 opacity-30" />
-                    <p className="text-sm">Tidak ada notifikasi</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {dbNotifications.map(n => (
-                      <div
-                        key={n.id}
-                        onClick={() => setSelectedNotif(n)}
-                        className={cn(
-                          "flex items-start gap-4 p-4 rounded-2xl border cursor-pointer transition-all group hover:border-violet-500/30 hover:bg-white/[0.03]",
-                          !n.is_read ? "bg-white/[0.03] border-white/10" : "bg-transparent border-white/5"
-                        )}
-                      >
-                        {/* Unread dot */}
-                        <div className="mt-1 flex-shrink-0">
-                          <div className={cn(
-                            "w-2 h-2 rounded-full",
-                            !n.is_read ? "bg-violet-500 shadow-[0_0_6px_rgba(139,92,246,0.6)]" : "bg-transparent"
-                          )} />
-                        </div>
-
-                        {/* Type icon */}
-                        <div className={cn(
-                          "w-8 h-8 rounded-xl flex items-center justify-center border flex-shrink-0",
-                          n.type === 'critical' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                          n.type === 'warning' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                          'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                        )}>
-                          <Bell className="w-3.5 h-3.5" />
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <p className="text-xs font-bold text-zinc-200">{n.title}</p>
-                            <span className={cn("px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase",
-                              n.type === 'critical' ? 'bg-red-500/10 text-red-400' :
-                              n.type === 'warning' ? 'bg-amber-500/10 text-amber-400' :
-                              'bg-blue-500/10 text-blue-400'
-                            )}>{n.type}</span>
-                          </div>
-                          <p className="text-[10px] text-zinc-500 truncate leading-relaxed">{n.message}</p>
-                          <p className="text-[9px] text-zinc-700 font-mono mt-1">
-                            {n.device_name || 'System'} · {new Date(n.created_at).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <span className="text-[9px] text-violet-400 flex items-center gap-1">
-                            <Mail className="w-3 h-3" /> Buka
-                          </span>
-                          <button
-                            onClick={e => { e.stopPropagation(); dismissNotif(n.id); }}
-                            className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-400 text-zinc-600 transition-colors"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
             </motion.div>
           ) : view === 'map' ? (
             <motion.div 
@@ -1336,51 +649,30 @@ export default function App() {
               className="space-y-8"
             >
               <div className="flex flex-col lg:flex-row gap-8">
-                  {/* Campus Map Visualization */}
+                {/* Campus Map Visualization */}
                 <div className="flex-1 bg-white/5 border border-white/10 rounded-3xl p-6 min-h-[600px] relative overflow-hidden">
-                  <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="mb-6 flex items-center justify-between">
                     <div>
                       <h2 className="text-2xl font-bold">ITATS Live Network Map</h2>
                       <p className="text-sm text-zinc-500">Real-time node status and density visualization</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Device Filter */}
-                      <select
-                        value={mapDeviceFilter}
-                        onChange={e => { setMapDeviceFilter(e.target.value); setSelectedBuilding(null); }}
-                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500/50 transition-all"
-                      >
-                        <option value="all" className="bg-zinc-900">🌐 Semua Perangkat</option>
-                        {devices.filter((d: any) => d.lat && d.lng).map((d: any) => (
-                          <option key={d.id} value={String(d.id)} className="bg-zinc-900">📡 {d.name}</option>
-                        ))}
-                        {devices.filter((d: any) => !d.lat || !d.lng).length > 0 && (
-                          <option disabled className="bg-zinc-900 text-zinc-600">── Tanpa Koordinat ──</option>
-                        )}
-                        {devices.filter((d: any) => !d.lat || !d.lng).map((d: any) => (
-                          <option key={`no-gps-${d.id}`} value={String(d.id)} className="bg-zinc-900 text-zinc-500">⚙ {d.name} (no GPS)</option>
-                        ))}
-                      </select>
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                    <div className="flex gap-2">
+                       <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                         <div className="w-2 h-2 rounded-full bg-emerald-500" />
                         <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Online</span>
                       </div>
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full">
+                      <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full">
                         <div className="w-2 h-2 rounded-full bg-red-500" />
                         <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Offline</span>
-                      </div>
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full">
-                        <div className="w-2 h-2 rounded-full bg-blue-500" />
-                        <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Router</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Real Map Representation */}
                   <div className="relative w-full h-[550px] rounded-2xl border border-white/10 overflow-hidden z-0 shadow-2xl">
-                    <MapContainer
-                      center={[-7.2908, 112.7790]}
-                      zoom={18}
+                    <MapContainer 
+                      center={[-7.2908, 112.7790]} 
+                      zoom={18} 
                       maxZoom={22}
                       style={{ height: '100%', width: '100%', background: '#f0f0f0' }}
                       zoomControl={false}
@@ -1389,145 +681,62 @@ export default function App() {
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                       />
+                      
+                      {selectedBuilding ? (
+                        <MapUpdater center={[selectedBuilding.lat, selectedBuilding.lng]} zoom={20} />
+                      ) : (
+                        <MapUpdater center={[-7.2908, 112.7790]} zoom={18} />
+                      )}
 
-                      {/* Auto-center when filter changes */}
-                      {(() => {
-                        const filtered = mapDeviceFilter !== 'all'
-                          ? devices.find((d: any) => String(d.id) === mapDeviceFilter)
-                          : null;
-                        if (filtered && (filtered as any).lat && (filtered as any).lng) {
-                          return <MapUpdater center={[(filtered as any).lat, (filtered as any).lng]} zoom={19} />;
-                        }
-                        if (selectedBuilding) {
-                          return <MapUpdater center={[selectedBuilding.lat, selectedBuilding.lng]} zoom={20} />;
-                        }
-                        return <MapUpdater center={[-7.2908, 112.7790]} zoom={18} />;
-                      })()}
+                      {campusData.map(building => {
+                        const totalRooms = building.floors.reduce((acc, f) => acc + f.rooms.length, 0);
+                        const offlineRooms = building.floors.reduce((acc, f) => acc + f.rooms.filter(r => r.status === 'offline').length, 0);
+                        const avgLoad = building.floors.reduce((acc, f) => acc + f.rooms.reduce((racc, r) => racc + (r.current / r.cap), 0), 0) / totalRooms;
+                        
+                        const markerColor = offlineRooms > 0 ? '#ef4444' : (avgLoad > 0.7 ? '#f59e0b' : '#10b981');
 
-                      {/* Building / WiFi Node Markers */}
-                      {campusData
-                        .filter(building => {
-                          if (mapDeviceFilter === 'all') return true;
-                          // When specific device selected, still show all buildings (network serves all)
-                          return true;
-                        })
-                        .map(building => {
-                          const totalRooms = building.floors.reduce((acc, f) => acc + f.rooms.length, 0);
-                          const offlineRooms = building.floors.reduce((acc, f) => acc + f.rooms.filter(r => r.status === 'offline').length, 0);
-                          const avgLoad = building.floors.reduce((acc, f) => acc + f.rooms.reduce((racc, r) => racc + (r.current / r.cap), 0), 0) / totalRooms;
-                          const markerColor = offlineRooms > 0 ? '#ef4444' : (avgLoad > 0.7 ? '#f59e0b' : '#10b981');
-                          const isHighlighted = mapDeviceFilter !== 'all';
-
-                          const customIcon = L.divIcon({
-                            className: 'custom-div-icon',
-                            html: `
-                              <div class="relative flex items-center justify-center">
-                                <div class="absolute w-10 h-10 rounded-full animate-ping opacity-20" style="background-color: ${markerColor}"></div>
-                                <div class="relative w-8 h-8 rounded-xl flex items-center justify-center border-2 shadow-xl transition-all hover:scale-110 ${isHighlighted ? 'opacity-60' : ''}"
-                                     style="background-color: ${markerColor}20; border-color: ${markerColor}; color: ${markerColor}">
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></svg>
-                                </div>
+                        const customIcon = L.divIcon({
+                          className: 'custom-div-icon',
+                          html: `
+                            <div class="relative flex items-center justify-center">
+                              <div class="absolute w-10 h-10 rounded-full animate-ping opacity-20" style="background-color: ${markerColor}"></div>
+                              <div class="relative w-8 h-8 rounded-xl flex items-center justify-center border-2 shadow-xl transition-all hover:scale-110" 
+                                   style="background-color: ${markerColor}20; border-color: ${markerColor}; color: ${markerColor}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></svg>
                               </div>
-                            `,
-                            iconSize: [32, 32],
-                            iconAnchor: [16, 16]
-                          });
+                            </div>
+                          `,
+                          iconSize: [32, 32],
+                          iconAnchor: [16, 16]
+                        });
 
-                          return (
-                            <Marker
-                              key={building.id}
-                              position={[building.lat, building.lng]}
-                              icon={customIcon}
-                              eventHandlers={{ click: () => setSelectedBuilding(building) }}
-                            >
-                              <Popup className="custom-popup">
-                                <div className="p-2 bg-zinc-900 text-white rounded-lg border border-white/10">
-                                  <h4 className="font-bold text-sm mb-1">{building.name}</h4>
-                                  <div className="flex items-center gap-2 text-[10px] text-zinc-400">
-                                    <Users className="w-3 h-3" />
-                                    <span>{Math.floor(avgLoad * 100)}% Avg Load</span>
+                        return (
+                          <Marker 
+                            key={building.id} 
+                            position={[building.lat, building.lng]} 
+                            icon={customIcon}
+                            eventHandlers={{
+                              click: () => setSelectedBuilding(building)
+                            }}
+                          >
+                            <Popup className="custom-popup">
+                              <div className="p-2 bg-zinc-900 text-white rounded-lg border border-white/10">
+                                <h4 className="font-bold text-sm mb-1">{building.name}</h4>
+                                <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+                                  <Users className="w-3 h-3" />
+                                  <span>{Math.floor(avgLoad * 100)}% Avg Load</span>
+                                </div>
+                                {offlineRooms > 0 && (
+                                  <div className="mt-1 flex items-center gap-1 text-[10px] text-red-500 font-bold">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    <span>{offlineRooms} APs Offline</span>
                                   </div>
-                                  {offlineRooms > 0 && (
-                                    <div className="mt-1 flex items-center gap-1 text-[10px] text-red-500 font-bold">
-                                      <AlertTriangle className="w-3 h-3" />
-                                      <span>{offlineRooms} APs Offline</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </Popup>
-                            </Marker>
-                          );
-                        })}
-
-                      {/* MikroTik Router Markers (only if has GPS coordinates) */}
-                      {devices
-                        .filter((d: any) => d.lat && d.lng)
-                        .filter((d: any) => mapDeviceFilter === 'all' || String(d.id) === mapDeviceFilter)
-                        .map((d: any) => {
-                          const isOnline = d.status === 'online';
-                          const routerColor = isOnline ? '#3b82f6' : '#ef4444';
-                          const isSelected = String(d.id) === mapDeviceFilter;
-
-                          const routerIcon = L.divIcon({
-                            className: 'custom-div-icon',
-                            html: `
-                              <div class="relative flex items-center justify-center">
-                                ${isSelected ? `<div class="absolute w-14 h-14 rounded-full animate-ping opacity-30" style="background-color: ${routerColor}"></div>` : ''}
-                                <div class="relative ${isSelected ? 'w-12 h-12' : 'w-10 h-10'} rounded-2xl flex items-center justify-center border-2 shadow-2xl"
-                                     style="background-color: ${routerColor}25; border-color: ${routerColor}; color: ${routerColor}">
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="${isSelected ? 20 : 16}" height="${isSelected ? 20 : 16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6" y1="6" y2="6"/><line x1="6" x2="6" y1="18" y2="18"/>
-                                  </svg>
-                                </div>
-                                <div class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold px-2 py-0.5 rounded-full border"
-                                     style="background-color: #0a0a0a; border-color: ${routerColor}40; color: ${routerColor}">
-                                  ${d.name}
-                                </div>
+                                )}
                               </div>
-                            `,
-                            iconSize: isSelected ? [48, 48] : [40, 40],
-                            iconAnchor: isSelected ? [24, 24] : [20, 20]
-                          });
-
-                          return (
-                            <Marker
-                              key={`router-${d.id}`}
-                              position={[d.lat, d.lng]}
-                              icon={routerIcon}
-                            >
-                              <Popup className="custom-popup">
-                                <div className="p-3 bg-zinc-900 text-white rounded-xl border border-white/10 min-w-[180px]">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-blue-500' : 'bg-red-500'}`} />
-                                    <h4 className="font-bold text-sm">{d.name}</h4>
-                                  </div>
-                                  <div className="space-y-1 text-[10px] text-zinc-400 font-mono">
-                                    <div className="flex justify-between gap-4">
-                                      <span>Host</span><span className="text-zinc-300">{d.host}</span>
-                                    </div>
-                                    <div className="flex justify-between gap-4">
-                                      <span>Status</span>
-                                      <span className={isOnline ? 'text-blue-400' : 'text-red-400'}>{d.status}</span>
-                                    </div>
-                                    <div className="flex justify-between gap-4">
-                                      <span>GPS</span>
-                                      <span className="text-zinc-400">{Number(d.lat).toFixed(4)}, {Number(d.lng).toFixed(4)}</span>
-                                    </div>
-                                    {d.last_seen && (
-                                      <div className="flex justify-between gap-4">
-                                        <span>Last Seen</span>
-                                        <span className="text-zinc-400">{new Date(d.last_seen).toLocaleTimeString()}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  {d.is_primary === 1 && (
-                                    <div className="mt-2 text-[9px] px-2 py-1 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 rounded font-bold text-center uppercase">Primary Router</div>
-                                  )}
-                                </div>
-                              </Popup>
-                            </Marker>
-                          );
-                        })}
+                            </Popup>
+                          </Marker>
+                        );
+                      })}
                     </MapContainer>
                   </div>
                 </div>
@@ -1712,194 +921,48 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="space-y-6"
+              className="space-y-8"
             >
-              {/* Header + Controls */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold">Network Topology</h2>
-                  <p className="text-sm text-zinc-500 flex items-center gap-2">
-                    {topoLoading
-                      ? <><span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse inline-block" /> Refreshing...</>
-                      : topoLastUpdated
-                        ? <><span className="w-2 h-2 bg-emerald-500 rounded-full inline-block" /> Updated {format(topoLastUpdated, 'HH:mm:ss')}</>
-                        : 'Fetching topology...'}
-                  </p>
+              <div className="bg-white/5 border border-white/10 rounded-3xl p-8 min-h-[700px]">
+                <div className="mb-12">
+                  <h2 className="text-2xl font-bold">Network Topology Visualization</h2>
+                  <p className="text-sm text-zinc-500">Hierarchical path monitoring from Internet to Access Points</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <select
-                    value={topoDeviceFilter}
-                    onChange={e => setTopoDeviceFilter(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-all"
-                  >
-                    <option value="all" className="bg-zinc-900">Semua Perangkat</option>
-                    {devices.map(d => (
-                      <option key={d.id} value={String(d.id)} className="bg-zinc-900">{d.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={fetchDynamicTopology}
-                    disabled={topoLoading}
-                    className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50"
-                  >
-                    <RefreshCw className={cn("w-5 h-5 text-zinc-400", topoLoading && "animate-spin")} />
-                  </button>
+
+                <div className="flex flex-col items-center">
+                  {topology && <TopologyTree node={topology} />}
+                </div>
+
+                <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                        <Signal className="w-4 h-4 text-emerald-500" />
+                      </div>
+                      <h4 className="text-sm font-bold">Parent-Child Logic</h4>
+                    </div>
+                    <p className="text-xs text-zinc-500 leading-relaxed">If a parent node (e.g. Switch) goes offline, all child nodes (APs) will automatically show as offline, indicating a path failure.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                        <Activity className="w-4 h-4 text-blue-500" />
+                      </div>
+                      <h4 className="text-sm font-bold">Link Monitoring</h4>
+                    </div>
+                    <p className="text-xs text-zinc-500 leading-relaxed">Real-time monitoring of interface status. "Link-down" on a switch port immediately flags the connected segment as problematic.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                        <Layers className="w-4 h-4 text-purple-500" />
+                      </div>
+                      <h4 className="text-sm font-bold">Root Cause Analysis</h4>
+                    </div>
+                    <p className="text-xs text-zinc-500 leading-relaxed">Visualizing the topology allows admins to quickly identify if a blackout is localized to a room or a whole building segment.</p>
+                  </div>
                 </div>
               </div>
-
-              {/* Legend */}
-              <div className="flex flex-wrap gap-3">
-                {[
-                  { color: 'bg-emerald-500', label: 'Online', glow: 'shadow-emerald-500/30' },
-                  { color: 'bg-red-500', label: 'Offline', glow: 'shadow-red-500/30' },
-                  { color: 'bg-zinc-500', label: 'Disabled', glow: '' },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
-                    <div className={`w-2.5 h-2.5 rounded-full ${item.color} shadow-lg ${item.glow}`} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">{item.label}</span>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80 animate-pulse" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Live Poll 15s</span>
-                </div>
-              </div>
-
-              {/* Topology Visualization */}
-              {topoLoading && !dynamicTopology ? (
-                <div className="flex flex-col items-center justify-center h-64 bg-white/5 border border-white/10 rounded-3xl gap-4">
-                  <div className="w-10 h-10 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-                  <p className="text-sm text-zinc-500">Connecting to MikroTik API...</p>
-                </div>
-              ) : dynamicTopology ? (
-                <DynamicTopologyView
-                  topology={dynamicTopology}
-                  expandedAP={expandedAP}
-                  setExpandedAP={setExpandedAP}
-                  setSelectedAPNode={setSelectedAPNode}
-                  setSelectedSwitchNode={setSelectedSwitchNode}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-48 bg-white/5 border border-white/10 rounded-3xl">
-                  <p className="text-zinc-500 text-sm">No topology data available</p>
-                </div>
-              )}
-
-              {/* AP/Switch Detail Modals */}
-              <AnimatePresence>
-                {selectedAPNode && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedAPNode(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-                    <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-xl bg-zinc-950 border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
-                      <div className="p-6 sm:p-8 bg-gradient-to-b from-emerald-500/10 to-transparent border-b border-white/5 relative">
-                        <button onClick={() => setSelectedAPNode(null)} className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/10 transition-colors">
-                          <X className="w-5 h-5 text-zinc-400" />
-                        </button>
-                        <div className="flex items-center gap-4">
-                          <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center border shadow-lg border-emerald-500/50 bg-emerald-500/5")}>
-                            <Wifi className="w-7 h-7 text-emerald-500" />
-                          </div>
-                          <div>
-                            <h2 className="text-2xl font-bold text-white">{selectedAPNode.name}</h2>
-                            <p className="text-sm text-zinc-400 flex items-center gap-2">
-                              <span className={cn("w-2 h-2 rounded-full", selectedAPNode.status === 'online' ? 'bg-emerald-500' : 'bg-red-500')} />
-                              {selectedAPNode.status.toUpperCase()} — {selectedAPNode.clients} Active Clients
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-6 sm:p-8 space-y-6">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                            <p className="text-[10px] uppercase font-bold text-zinc-500 mb-1">SSID</p>
-                            <p className="text-sm font-bold text-white truncate">{selectedAPNode.ssid || '-'}</p>
-                          </div>
-                          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                            <p className="text-[10px] uppercase font-bold text-zinc-500 mb-1">MAC Address</p>
-                            <p className="text-sm font-mono text-zinc-300">{selectedAPNode['mac-address'] || '-'}</p>
-                          </div>
-                          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                            <p className="text-[10px] uppercase font-bold text-zinc-500 mb-1">Band</p>
-                            <p className="text-sm font-bold text-zinc-300">{selectedAPNode.band || '-'}</p>
-                          </div>
-                          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                            <p className="text-[10px] uppercase font-bold text-zinc-500 mb-1">Channel</p>
-                            <p className="text-sm font-bold text-zinc-300">{selectedAPNode.channel || '-'}</p>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <h4 className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
-                            <Users className="w-4 h-4" /> Connected Clients
-                          </h4>
-                          <div className="bg-black/50 border border-white/10 rounded-2xl overflow-hidden max-h-60 overflow-y-auto">
-                            {!selectedAPNode.clientDetails || selectedAPNode.clientDetails.length === 0 ? (
-                              <div className="p-8 text-center text-zinc-500 text-sm">No clients currently connected to this AP.</div>
-                            ) : (
-                              <table className="w-full text-left text-xs">
-                                <thead>
-                                  <tr className="bg-white/5 border-b border-white/10">
-                                    <th className="px-4 py-3 font-semibold text-zinc-400">MAC Address</th>
-                                    <th className="px-4 py-3 font-semibold text-zinc-400 text-right">Signal</th>
-                                    <th className="px-4 py-3 font-semibold text-zinc-400 text-right">Uptime</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {selectedAPNode.clientDetails.map((c: any, i: number) => (
-                                    <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
-                                      <td className="px-4 py-3 font-mono text-zinc-300">{c.mac}</td>
-                                      <td className="px-4 py-3 text-right font-mono">
-                                        <span className={cn("px-2 py-0.5 rounded-full text-[10px]", Number(c.signal) > -70 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400')}>{c.signal} dBm</span>
-                                      </td>
-                                      <td className="px-4 py-3 text-right text-zinc-400">{c.uptime}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  </div>
-                )}
-
-                {selectedSwitchNode && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedSwitchNode(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-                    <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-md bg-zinc-950 border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
-                      <div className="p-6 sm:p-8 bg-gradient-to-b from-blue-500/10 to-transparent border-b border-white/5 relative">
-                        <button onClick={() => setSelectedSwitchNode(null)} className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/10 transition-colors">
-                          <X className="w-5 h-5 text-zinc-400" />
-                        </button>
-                        <div className="flex items-center gap-4">
-                          <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center border shadow-lg border-blue-500/50 bg-blue-500/5")}>
-                            <HardDrive className="w-7 h-7 text-blue-500" />
-                          </div>
-                          <div>
-                            <h2 className="text-2xl font-bold text-white">{selectedSwitchNode.name}</h2>
-                            <p className="text-sm text-zinc-400 flex items-center gap-2">
-                              <span className={cn("w-2 h-2 rounded-full", selectedSwitchNode.status === 'online' ? 'bg-emerald-500' : 'bg-red-500')} />
-                              {selectedSwitchNode.status.toUpperCase()} Switch
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-6 sm:p-8 space-y-6">
-                        <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-5 text-center space-y-2">
-                          <Network className="w-8 h-8 text-blue-400 mx-auto opacity-50 mb-3" />
-                          <h4 className="text-sm font-bold text-blue-400">Total Downlinks</h4>
-                          <p className="text-4xl font-bold text-white">{selectedSwitchNode.children?.length || 0} APs</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button onClick={() => { setSelectedSwitchNode(null); setView('devices'); }} className="p-3 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-sm font-bold transition-all">To Device Manager</button>
-                          <button onClick={() => setSelectedSwitchNode(null)} className="p-3 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 text-blue-400 rounded-xl text-sm font-bold transition-all">Tutup</button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
             </motion.div>
           ) : view === 'devices' ? (
             <motion.div
@@ -1909,39 +972,39 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-8"
             >
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="text-xl sm:text-2xl font-bold truncate">MikroTik Device Manager</h2>
-                    <p className="text-sm text-zinc-500">Manage and monitor multiple MikroTik routers</p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold">MikroTik Device Manager</h2>
+                  <p className="text-sm text-zinc-500">Manage and monitor multiple MikroTik routers</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  {/* Global Analytics Summary */}
+                  {globalStats && (
+                    <div className="flex items-center gap-6 px-6 py-2 bg-white/5 border border-white/10 rounded-2xl">
+                      <div className="text-center">
+                        <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">Total</p>
+                        <p className="text-lg font-bold">{globalStats.total}</p>
+                      </div>
+                      <div className="w-px h-8 bg-white/10" />
+                      <div className="text-center">
+                        <p className="text-[10px] text-emerald-500 uppercase font-bold tracking-widest">Online</p>
+                        <p className="text-lg font-bold text-emerald-500">{globalStats.online}</p>
+                      </div>
+                      <div className="w-px h-8 bg-white/10" />
+                      <div className="text-center">
+                        <p className="text-[10px] text-red-500 uppercase font-bold tracking-widest">Offline</p>
+                        <p className="text-lg font-bold text-red-500">{globalStats.offline}</p>
+                      </div>
+                    </div>
+                  )}
                   <button 
                     onClick={() => setIsAddingDevice(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all self-start sm:self-auto whitespace-nowrap"
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
                   >
                     <Plus className="w-4 h-4" />
                     Add Device
                   </button>
                 </div>
-                {/* Global Analytics Summary */}
-                {globalStats && (
-                  <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-6 py-2 bg-white/5 border border-white/10 rounded-2xl w-fit">
-                    <div className="text-center">
-                      <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">Total</p>
-                      <p className="text-lg font-bold">{globalStats.total}</p>
-                    </div>
-                    <div className="w-px h-8 bg-white/10" />
-                    <div className="text-center">
-                      <p className="text-[10px] text-emerald-500 uppercase font-bold tracking-widest">Online</p>
-                      <p className="text-lg font-bold text-emerald-500">{globalStats.online}</p>
-                    </div>
-                    <div className="w-px h-8 bg-white/10" />
-                    <div className="text-center">
-                      <p className="text-[10px] text-red-500 uppercase font-bold tracking-widest">Offline</p>
-                      <p className="text-lg font-bold text-red-500">{globalStats.offline}</p>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Notifications Bar */}
@@ -2030,11 +1093,8 @@ export default function App() {
                         </div>
                         <div className="flex items-center justify-between mt-4">
                           <div className="flex items-center gap-2">
-                            <div className={cn("w-1.5 h-1.5 rounded-full", device.status === 'online' ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]")} />
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-white">
-                              {device.status}
-                            </span>
-                            <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/10 uppercase" title="Status updated via Background ICMP Ping">ICMP Ping</span>
+                            <div className={cn("w-1.5 h-1.5 rounded-full", device.status === 'online' ? "bg-emerald-500" : "bg-red-500")} />
+                            <span className="text-[10px] uppercase font-mono tracking-tighter text-zinc-500">{device.status}</span>
                           </div>
                           {device.last_seen && (
                             <span className="text-[10px] text-zinc-600">Last seen: {format(new Date(device.last_seen), 'HH:mm')}</span>
@@ -2053,34 +1113,34 @@ export default function App() {
                         key={selectedDevice.id}
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white/5 border border-white/10 rounded-3xl p-4 sm:p-8 space-y-6 overflow-hidden"
+                        className="bg-white/5 border border-white/10 rounded-3xl p-8 space-y-8"
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-12 h-12 flex-shrink-0 bg-emerald-500/10 rounded-2xl flex items-center justify-center border border-emerald-500/20">
-                              <Terminal className="w-7 h-7 text-emerald-500" />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center border border-emerald-500/20">
+                              <Terminal className="w-8 h-8 text-emerald-500" />
                             </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="text-lg sm:text-2xl font-bold truncate">{selectedDevice.name}</h3>
+                            <div>
+                              <div className="flex items-center gap-3">
+                                <h3 className="text-2xl font-bold">{selectedDevice.name}</h3>
                                 {selectedDevice.is_primary === 1 && (
-                                  <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-[10px] font-bold text-yellow-500 uppercase tracking-wider flex-shrink-0">
+                                  <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-[10px] font-bold text-yellow-500 uppercase tracking-wider">
                                     Primary
                                   </span>
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                <p className="text-sm text-zinc-500 truncate">Identity: {deviceStatus?.identity || '...'}</p>
+                                <p className="text-sm text-zinc-500">Identity: {deviceStatus?.identity || '...'}</p>
                                 <button 
                                   onClick={() => { setIsRenaming(true); setNewName(deviceStatus?.identity || ''); }}
-                                  className="text-[10px] text-emerald-500 hover:underline flex-shrink-0"
+                                  className="text-[10px] text-emerald-500 hover:underline"
                                 >
                                   Rename
                                 </button>
                               </div>
                             </div>
                           </div>
-                          <div className="flex gap-2 flex-shrink-0">
+                          <div className="flex gap-2">
                             <button 
                               onClick={() => fetchDeviceStatus(selectedDevice)}
                               className="p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
@@ -2103,9 +1163,6 @@ export default function App() {
                               <div className="flex items-center gap-3">
                                 <Cpu className="w-5 h-5 text-blue-500" />
                                 <h4 className="text-sm font-bold">System Resources</h4>
-                                {deviceStatus.protocol === 'SNMP' && (
-                                  <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/10 uppercase" title="Fetched via SNMP v2c">SNMP v2c</span>
-                                )}
                               </div>
                               <div className="space-y-3">
                                 <div className="flex justify-between text-xs">
@@ -2129,9 +1186,6 @@ export default function App() {
                               <div className="flex items-center gap-3">
                                 <Info className="w-5 h-5 text-purple-500" />
                                 <h4 className="text-sm font-bold">System Info</h4>
-                                {deviceStatus.protocol === 'SNMP' && (
-                                  <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/10 uppercase">SNMP v2c</span>
-                                )}
                               </div>
                               <div className="space-y-2">
                                 <div className="flex justify-between text-xs">
@@ -2149,200 +1203,42 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Device Detail Tabs */}
-                            <div className="md:col-span-2 space-y-4">
-                              <div className="flex items-center gap-2 border-b border-white/10 pb-2">
-                                <button onClick={() => setDeviceTab('interfaces')} className={cn("px-4 py-2 text-sm font-bold rounded-lg transition-all", deviceTab === 'interfaces' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300')}>Interfaces</button>
-                                <button onClick={() => setDeviceTab('queues')} className={cn("px-4 py-2 text-sm font-bold rounded-lg transition-all", deviceTab === 'queues' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300')}>Bandwidth Queues</button>
-                              </div>
-
-                              {deviceTab === 'interfaces' ? (
-                                <div className="p-6 rounded-2xl bg-black/40 border border-white/5 space-y-4">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            {/* Interfaces Section */}
+                            <div className="md:col-span-2 p-6 rounded-2xl bg-black/40 border border-white/5 space-y-4">
+                              <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                   <Network className="w-5 h-5 text-emerald-500" />
                                   <h4 className="text-sm font-bold">Network Interfaces</h4>
-                                  <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/10 uppercase" title="Fetched via RouterOS API">RouterOS API</span>
                                 </div>
-                                <div className="flex gap-3">
-                                  <div className="relative">
-                                    <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                                    <input 
-                                      type="text" 
-                                      placeholder="Search interfaces..." 
-                                      value={interfaceSearch}
-                                      onChange={(e) => setInterfaceSearch(e.target.value)}
-                                      className="bg-zinc-900 border border-white/10 rounded-xl pl-9 pr-4 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50 w-full sm:w-64 transition-all"
-                                    />
-                                  </div>
-                                </div>
+                                <span className="text-[10px] text-zinc-500 font-mono">{deviceInterfaces.length} Interfaces</span>
                               </div>
-                              
-                              <div className="overflow-x-auto rounded-xl border border-white/5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                <table className="w-full text-left border-collapse">
-                                  <thead>
-                                    <tr className="bg-white/5 text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap">Status / Name</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap">Type</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap text-right">Actual MTU</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap text-right">L2 MTU</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap text-right">Tx</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap text-right">Rx</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap text-right">Tx pkt/s</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap text-right">Rx pkt/s</th>
-                                      <th className="p-3 border-b border-white/5 whitespace-nowrap text-right">Action</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="text-xs">
-                                    {(() => {
-                                      let list = deviceInterfaces.filter((iface: any) => iface.name.toLowerCase().includes(interfaceSearch.toLowerCase()) || iface.type?.toLowerCase().includes(interfaceSearch.toLowerCase()));
-                                      
-                                      const byParent: Record<string, any[]> = { root: [] };
-                                      list.forEach((i: any) => {
-                                        if (i.parent && list.find((l: any) => l.name === i.parent)) {
-                                          if (!byParent[i.parent]) byParent[i.parent] = [];
-                                          byParent[i.parent].push(i);
-                                        } else {
-                                          byParent.root.push(i);
-                                        }
-                                      });
-                                      
-                                      const sortWeight = (t: string) => t === 'bridge' ? 0 : t === 'ether' ? 1 : 2;
-                                      byParent.root.sort((a,b) => sortWeight(a.type) - sortWeight(b.type) || a.name.localeCompare(b.name));
-                                      
-                                      const sorted: any[] = [];
-                                      byParent.root.forEach(p => {
-                                        sorted.push(p);
-                                        if (byParent[p.name]) {
-                                          byParent[p.name].sort((a,b) => a.name.localeCompare(b.name)).forEach(c => { c._isChild = true; sorted.push(c); });
-                                        }
-                                      });
-                                      return sorted;
-                                    })().map((iface: any) => {
-                                        const rates = interfaceTraffic[iface.name] || { txSpeed: 0, rxSpeed: 0, txPacketPs: 0, rxPacketPs: 0 };
-                                        
-                                        return (
-                                          <tr key={iface.name} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
-                                            <td className={cn("p-3", iface._isChild && "pl-8 relative")}>
-                                              <div className="flex items-center gap-2">
-                                                {iface._isChild && <CornerDownRight className="w-4 h-4 text-zinc-600 absolute left-3 top-[-4px] opacity-60" />}
-                                                <div className={cn(
-                                                  "w-2 h-2 rounded-full flex-shrink-0 mt-0.5 transition-colors duration-300",
-                                                  iface.running === "true" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-red-500"
-                                                )} />
-                                                <span className={cn(
-                                                  "font-semibold whitespace-nowrap",
-                                                  iface.disabled === "true" ? "text-zinc-500 line-through" : "text-white"
-                                                )}>
-                                                  {iface.name}
-                                                </span>
-                                              </div>
-                                            </td>
-                                            <td className="p-3 text-zinc-400 whitespace-nowrap">{iface.type || 'unknown'}</td>
-                                            <td className="p-3 text-right font-mono text-zinc-400">{iface['actual-mtu'] || '-'}</td>
-                                            <td className="p-3 text-right font-mono text-zinc-400">{iface['l2mtu'] || '-'}</td>
-                                            <td className="p-3 text-right whitespace-nowrap transition-all duration-300">
-                                              <span className={cn(
-                                                "font-mono text-[11px] font-semibold px-2 py-0.5 rounded transition-all duration-500",
-                                                rates.txSpeed > 0 ? "bg-amber-500/10 text-amber-500 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.15)]" : "text-zinc-500"
-                                              )}>
-                                                {formatSpeed(rates.txSpeed)}
-                                              </span>
-                                            </td>
-                                            <td className="p-3 text-right whitespace-nowrap transition-all duration-300">
-                                              <span className={cn(
-                                                "font-mono text-[11px] font-semibold px-2 py-0.5 rounded transition-all duration-500",
-                                                rates.rxSpeed > 0 ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "text-zinc-500"
-                                              )}>
-                                                {formatSpeed(rates.rxSpeed)}
-                                              </span>
-                                            </td>
-                                            <td className="p-3 text-right font-mono text-zinc-500 transition-colors duration-500 group-hover:text-amber-500/70">{rates.txPacketPs}</td>
-                                            <td className="p-3 text-right font-mono text-zinc-500 transition-colors duration-500 group-hover:text-emerald-500/70">{rates.rxPacketPs}</td>
-                                            <td className="p-3 text-right">
-                                              <button
-                                                onClick={() => handleToggleInterface(selectedDevice.id, iface.name, iface.disabled)}
-                                                className={cn(
-                                                  "text-[9px] font-bold px-2 py-1 rounded transition-all whitespace-nowrap",
-                                                  iface.disabled === "true" ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20" : "bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20"
-                                                )}
-                                              >
-                                                {iface.disabled === "true" ? "ENABLE" : "DISABLE"}
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    {deviceInterfaces.length === 0 && (
-                                      <tr>
-                                        <td colSpan={9} className="p-8 text-center text-zinc-500">
-                                          <Network className="w-8 h-8 text-zinc-600 mx-auto mb-3 opacity-50" />
-                                          No interfaces found or loading...
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                                </div>
-                              ) : (
-                                <div className="p-6 rounded-2xl bg-black/40 border border-white/5 space-y-4">
-                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {deviceInterfaces.map((iface: any) => (
+                                  <div key={iface.name} className="p-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between group">
                                     <div className="flex items-center gap-3">
-                                      <Zap className="w-5 h-5 text-amber-500" />
-                                      <h4 className="text-sm font-bold">Simple Queues</h4>
+                                      <div className={cn(
+                                        "w-2 h-2 rounded-full",
+                                        iface.running === "true" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-zinc-600"
+                                      )} />
+                                      <div>
+                                        <p className="text-xs font-bold truncate max-w-[100px]">{iface.name}</p>
+                                        <p className="text-[10px] text-zinc-500 font-mono">{iface.type}</p>
+                                      </div>
                                     </div>
-                                    <div className="flex gap-2">
-                                      <button onClick={fetchQueues} className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10">
-                                        <RefreshCw className={cn("w-4 h-4 text-zinc-400", queuesLoading && "animate-spin")} />
-                                      </button>
-                                      <button onClick={() => setShowAddQueue(true)} className="px-3 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl font-bold text-xs hover:bg-emerald-500/20 flex items-center gap-2">
-                                        <Plus className="w-3 h-3" /> Add Queue
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => handleToggleInterface(selectedDevice.id, iface.name, iface.disabled)}
+                                        className={cn(
+                                          "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase transition-all",
+                                          iface.disabled === "true" ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                                        )}
+                                      >
+                                        {iface.disabled === "true" ? "Enable" : "Disable"}
                                       </button>
                                     </div>
                                   </div>
-                                  
-                                  <div className="overflow-x-auto rounded-xl border border-white/5">
-                                    {queues.length === 0 ? (
-                                      <div className="p-8 text-center text-zinc-500">No queues found.</div>
-                                    ) : (
-                                      <table className="w-full text-left border-collapse">
-                                        <thead>
-                                          <tr className="bg-white/5 text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                                            <th className="p-3 border-b border-white/5">Name</th>
-                                            <th className="p-3 border-b border-white/5">Target</th>
-                                            <th className="p-3 border-b border-white/5">Max Limit</th>
-                                            <th className="p-3 border-b border-white/5">Tx / Rx Rate</th>
-                                            <th className="p-3 border-b border-white/5 text-right">Action</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="text-xs">
-                                          {queues.map(q => (
-                                            <tr key={q['.id']} className={cn("border-b border-white/5 hover:bg-white/[0.02]", q.disabled === 'true' && "opacity-50")}>
-                                              <td className="p-3 font-semibold text-amber-400">
-                                                {q.name}
-                                                {q.comment && <span className="block text-[10px] text-zinc-500 font-normal">{q.comment}</span>}
-                                              </td>
-                                              <td className="p-3 text-zinc-400 font-mono">{q.target}</td>
-                                              <td className="p-3 text-emerald-400">{q['max-limit']}</td>
-                                              <td className="p-3 text-zinc-400">
-                                                {formatSpeed(Number(q['tx-rate'] || 0))} / {formatSpeed(Number(q['rx-rate'] || 0))}
-                                              </td>
-                                              <td className="p-3 text-right flex items-center justify-end gap-1.5">
-                                                <button onClick={() => setShowEditQueue({ id: q['.id'], name: q.name, target: q.target, maxLimit: q['max-limit'], comment: q.comment || '' })} className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-1 rounded hover:bg-amber-500/30 transition-colors">Edit</button>
-                                                <button onClick={() => toggleQueue(q['.id'], q.disabled, q.name)} className={`text-[10px] px-2 py-1 rounded transition-colors ${q.disabled === 'true' ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}>
-                                                  {q.disabled === 'true' ? 'Enable' : 'Disable'}
-                                                </button>
-                                                <button onClick={() => deleteQueue(q['.id'], q.name)} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/30 transition-colors">Del</button>
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                                ))}
+                              </div>
                             </div>
 
                             {/* Remote Console Section */}
@@ -2350,13 +1246,6 @@ export default function App() {
                               <div className="flex items-center gap-3">
                                 <Terminal className="w-5 h-5 text-amber-500" />
                                 <h4 className="text-sm font-bold">Quick Command Console</h4>
-                              </div>
-                              <div className="flex flex-wrap gap-2 mb-2">
-                                <button onClick={() => handleExec(selectedDevice.id, '/log/print detail')} className="px-3 py-1 rounded bg-white/5 hover:bg-white/10 text-xs text-zinc-400 border border-white/10 transition-colors">Log Print</button>
-                                <button onClick={() => handleExec(selectedDevice.id, '/ip/route/print')} className="px-3 py-1 rounded bg-white/5 hover:bg-white/10 text-xs text-zinc-400 border border-white/10 transition-colors">Routes</button>
-                                <button onClick={() => handleExec(selectedDevice.id, '/ip/arp/print')} className="px-3 py-1 rounded bg-white/5 hover:bg-white/10 text-xs text-zinc-400 border border-white/10 transition-colors">ARP List</button>
-                                <button onClick={() => handleExec(selectedDevice.id, '/ip/dhcp-server/lease/print detail')} className="px-3 py-1 rounded bg-white/5 hover:bg-white/10 text-xs text-zinc-400 border border-white/10 transition-colors">DHCP Leases</button>
-                                <button onClick={() => handleExec(selectedDevice.id, '/ping address=8.8.8.8 count=4')} className="px-3 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-500 border border-emerald-500/20 transition-colors">Ping 8.8.8.8</button>
                               </div>
                               <div className="flex gap-2">
                                 <input 
@@ -2486,38 +1375,6 @@ export default function App() {
                             />
                           </div>
                         </div>
-                        {/* GPS Coordinates (optional) */}
-                        <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 space-y-3">
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-blue-400" />
-                            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Lokasi GPS</span>
-                            <span className="text-[10px] text-zinc-600 ml-1">(opsional — untuk marker di Campus Map)</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Latitude</label>
-                              <input
-                                type="number"
-                                step="any"
-                                placeholder="cth: -7.2908"
-                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-all"
-                                value={(newDevice as any).lat}
-                                onChange={e => setNewDevice({...newDevice, lat: e.target.value} as any)}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Longitude</label>
-                              <input
-                                type="number"
-                                step="any"
-                                placeholder="cth: 112.7790"
-                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-all"
-                                value={(newDevice as any).lng}
-                                onChange={e => setNewDevice({...newDevice, lng: e.target.value} as any)}
-                              />
-                            </div>
-                          </div>
-                        </div>
                         <div className="pt-4 flex gap-3">
                           <button 
                             type="button"
@@ -2525,7 +1382,7 @@ export default function App() {
                               setIsAddingDevice(false);
                               setIsEditingDevice(false);
                               setEditingDevice(null);
-                              setNewDevice({ name: '', host: '', user: '', password: '', port: 8728, lat: '', lng: '' });
+                              setNewDevice({ name: '', host: '', user: '', password: '', port: 8728 });
                             }}
                             className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-sm hover:bg-white/10 transition-all"
                           >
@@ -2537,128 +1394,6 @@ export default function App() {
                           >
                             {isEditingDevice ? 'Save Changes' : 'Add Device'}
                           </button>
-                        </div>
-                      </form>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
-
-              {/* Add Queue Modal */}
-              <AnimatePresence>
-                {showAddQueue && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                    <motion.div 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      onClick={() => setShowAddQueue(false)}
-                      className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-                    />
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                      className="relative w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-8 shadow-2xl"
-                    >
-                      <h3 className="text-xl font-bold mb-6">Tambah Antrian Bandwidth</h3>
-                      <form onSubmit={handleAddQueue} className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Nama Target</label>
-                          <input 
-                            required type="text" placeholder="e.g. limit-user-A"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={newQueue.name} onChange={e => setNewQueue({...newQueue, name: e.target.value})}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Target (IP atau Interface)</label>
-                          <input 
-                            required type="text" placeholder="e.g. 192.168.1.10/32"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={newQueue.target} onChange={e => setNewQueue({...newQueue, target: e.target.value})}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Max Limit (TX/RX)</label>
-                          <input 
-                            required type="text" placeholder="e.g. 10M/10M"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={newQueue.maxLimit} onChange={e => setNewQueue({...newQueue, maxLimit: e.target.value})}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Komentar (Opsional)</label>
-                          <input 
-                            type="text" placeholder="Deskripsi antrian"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={newQueue.comment} onChange={e => setNewQueue({...newQueue, comment: e.target.value})}
-                          />
-                        </div>
-                        <div className="pt-4 flex gap-3">
-                          <button type="button" onClick={() => setShowAddQueue(false)} className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-sm hover:bg-white/10 transition-all">Batal</button>
-                          <button type="submit" className="flex-1 px-4 py-3 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-all">Simpan</button>
-                        </div>
-                      </form>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
-
-              {/* Edit Queue Modal */}
-              <AnimatePresence>
-                {showEditQueue && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                    <motion.div 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      onClick={() => setShowEditQueue(null)}
-                      className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-                    />
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                      className="relative w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-8 shadow-2xl"
-                    >
-                      <h3 className="text-xl font-bold mb-6">Edit Antrian Bandwidth</h3>
-                      <form onSubmit={handleEditQueue} className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Nama Target</label>
-                          <input 
-                            required type="text" placeholder="e.g. limit-user-A"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={showEditQueue.name} onChange={e => setShowEditQueue({...showEditQueue, name: e.target.value})}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Target (IP atau Interface)</label>
-                          <input 
-                            required type="text" placeholder="e.g. 192.168.1.10/32"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={showEditQueue.target} onChange={e => setShowEditQueue({...showEditQueue, target: e.target.value})}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Max Limit (TX/RX)</label>
-                          <input 
-                            required type="text" placeholder="e.g. 10M/10M"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={showEditQueue.maxLimit} onChange={e => setShowEditQueue({...showEditQueue, maxLimit: e.target.value})}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Komentar (Opsional)</label>
-                          <input 
-                            type="text" placeholder="Deskripsi antrian"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500/50"
-                            value={showEditQueue.comment} onChange={e => setShowEditQueue({...showEditQueue, comment: e.target.value})}
-                          />
-                        </div>
-                        <div className="pt-4 flex gap-3">
-                          <button type="button" onClick={() => setShowEditQueue(null)} className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-sm hover:bg-white/10 transition-all">Batal</button>
-                          <button type="submit" className="flex-1 px-4 py-3 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-all">Simpan</button>
                         </div>
                       </form>
                     </motion.div>
@@ -2714,7 +1449,7 @@ export default function App() {
                 )}
               </AnimatePresence>
             </motion.div>
-          ) : view === 'docs' ? (
+          ) : (
             <motion.div
               key="docs"
               initial={{ opacity: 0, y: 20 }}
@@ -2809,533 +1544,19 @@ export default function App() {
                 </section>
               </div>
             </motion.div>
-          ) : view === 'vlan' ? (
-            <motion.div
-              key="vlan"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-8"
-            >
-              {/* Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-                      <Layers className="w-5 h-5 text-violet-400" />
-                    </div>
-                    VLAN Traffic Monitor
-                  </h2>
-                  <p className="text-sm text-zinc-500 mt-1">Real-time bandwidth per segmen jaringan VLAN</p>
-                </div>
-                <button
-                  onClick={() => fetchVlanTraffic(vlanDeviceFilter)}
-                  className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20 transition-all"
-                >
-                  <RefreshCw className={cn("w-4 h-4 text-violet-400", vlanLoading && "animate-spin")} />
-                </button>
-              </div>
-
-              {/* Filter Row */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row gap-3 flex-wrap">
-                {/* Device Filter */}
-                <select
-                  value={vlanDeviceFilter}
-                  onChange={e => setVlanDeviceFilter(e.target.value)}
-                  className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-violet-500/50 transition-all min-w-[180px]"
-                >
-                  <option value="all" className="bg-zinc-900">🌐 Semua MikroTik</option>
-                  {devices.filter((d: any) => d.status === 'online').map((d: any) => (
-                    <option key={d.id} value={String(d.id)} className="bg-zinc-900">📡 {d.name}</option>
-                  ))}
-                </select>
-
-                {/* Search */}
-                <div className="relative flex-1 min-w-[180px]">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
-                  <input
-                    type="text"
-                    placeholder="Cari VLAN..."
-                    value={vlanSearch}
-                    onChange={e => setVlanSearch(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl pl-8 pr-4 py-2 text-xs text-white focus:outline-none focus:border-violet-500/50 transition-all"
-                  />
-                </div>
-
-                {/* Status Filter */}
-                <select
-                  value={vlanStatus}
-                  onChange={e => setVlanStatus(e.target.value)}
-                  className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-violet-500/50 transition-all"
-                >
-                  <option value="all" className="bg-zinc-900">Semua Status</option>
-                  <option value="active" className="bg-zinc-900">✅ Aktif Saja</option>
-                  <option value="disabled" className="bg-zinc-900">⛔ Disabled Saja</option>
-                </select>
-
-                {/* Sort */}
-                <select
-                  value={vlanSort}
-                  onChange={e => setVlanSort(e.target.value)}
-                  className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-violet-500/50 transition-all"
-                >
-                  <option value="default" className="bg-zinc-900">Urutan Default</option>
-                  <option value="highest-rx" className="bg-zinc-900">↓ Tertinggi Download (RX)</option>
-                  <option value="highest-tx" className="bg-zinc-900">↑ Tertinggi Upload (TX)</option>
-                  <option value="name-asc" className="bg-zinc-900">A–Z Nama VLAN</option>
-                </select>
-              </div>
-
-              {/* Summary Stats */}
-              {vlanTraffic.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-4 rounded-2xl bg-violet-500/5 border border-violet-500/20">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Total VLAN</p>
-                    <p className="text-2xl font-bold text-violet-400">{vlanTraffic.length}</p>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Aktif</p>
-                    <p className="text-2xl font-bold text-emerald-400">{vlanTraffic.filter((v: any) => v.disabled !== 'true').length}</p>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Total Download</p>
-                    <p className="text-xl font-bold text-blue-400">{formatBytes(vlanTraffic.reduce((a: number, v: any) => a + Number(v['rx-byte'] || 0), 0))}</p>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Total Upload</p>
-                    <p className="text-xl font-bold text-amber-400">{formatBytes(vlanTraffic.reduce((a: number, v: any) => a + Number(v['tx-byte'] || 0), 0))}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* VLAN Cards Grid */}
-              {vlanLoading ? (
-                <div className="flex items-center justify-center py-20">
-                  <div className="w-10 h-10 border-2 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
-                </div>
-              ) : (() => {
-                const filtered = vlanTraffic
-                  .filter((v: any) => {
-                    const nameMatch = v.name.toLowerCase().includes(vlanSearch.toLowerCase());
-                    const statusMatch = vlanStatus === 'all'
-                      ? true
-                      : vlanStatus === 'active' ? v.disabled !== 'true' : v.disabled === 'true';
-                    return nameMatch && statusMatch;
-                  })
-                  .sort((a: any, b: any) => {
-                    const lastA = (vlanTrafficHistory[a.name] || []).slice(-1)[0] || { rawRx: 0, rawTx: 0 };
-                    const lastB = (vlanTrafficHistory[b.name] || []).slice(-1)[0] || { rawRx: 0, rawTx: 0 };
-                    if (vlanSort === 'highest-rx') return lastB.rawRx - lastA.rawRx;
-                    if (vlanSort === 'highest-tx') return lastB.rawTx - lastA.rawTx;
-                    if (vlanSort === 'name-asc') return a.name.localeCompare(b.name);
-                    return 0;
-                  });
-
-                if (filtered.length === 0) return (
-                  <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
-                    <Layers className="w-12 h-12 mb-4 opacity-20" />
-                    <p className="text-sm font-medium">Tidak ada VLAN yang cocok dengan filter</p>
-                    <p className="text-xs mt-1 text-zinc-700">Coba ubah filter pencarian atau status</p>
-                  </div>
-                );
-
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-                    {filtered.map((v: any, idx: number) => {
-                      const history = vlanTrafficHistory[v.name] || [];
-                      const last = history[history.length - 1] || { rx: 0, tx: 0, rawRx: 0, rawTx: 0, rawRxByte: 0, rawTxByte: 0 };
-                      const isActive = v.disabled !== 'true';
-                      return (
-                        <div key={idx} className={cn(
-                          "p-4 rounded-xl border transition-all flex flex-col group hover:border-violet-500/30",
-                          isActive ? 'bg-black/30 border-white/5' : 'bg-zinc-900/50 border-white/5 opacity-60'
-                        )}>
-                          <div className="flex justify-between items-start mb-3 flex-shrink-0">
-                            <div className="min-w-0 pr-2">
-                              <h4 className="text-xs font-bold text-violet-400 capitalize truncate" title={v.name}>
-                                {v.name.replace('vlan', 'VLAN ').replace(/\s*\[/, ' [')}
-                              </h4>
-                              <div className="flex gap-2 items-center mt-1">
-                                <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0",
-                                  isActive ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse' : 'bg-zinc-600'
-                                )} />
-                                <p className="text-[9px] text-zinc-500 uppercase tracking-wide">
-                                  {isActive ? 'Active' : 'Disabled'}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right flex-shrink-0">
-                              <p className="text-[10px] text-emerald-400 font-mono">▼ {formatBps(last.rawRx)}</p>
-                              <p className="text-[10px] text-amber-400 font-mono">▲ {formatBps(last.rawTx)}</p>
-                            </div>
-                          </div>
-
-                          <div className="flex-1 min-h-[130px] max-h-[130px] w-full -ml-2 relative">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart data={history} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                                <defs>
-                                  <linearGradient id={`vRx-${idx}`} x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.35}/>
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                  </linearGradient>
-                                  <linearGradient id={`vTx-${idx}`} x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.35}/>
-                                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                                  </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff06" vertical={false} />
-                                <YAxis stroke="#3f3f46" tick={{ fontSize: 7 }} tickFormatter={val => `${val}k`} width={28} axisLine={false} tickLine={false} />
-                                <Tooltip
-                                  contentStyle={{ background: '#0a0a0a', border: '1px solid #ffffff10', borderRadius: '8px', fontSize: '10px' }}
-                                  formatter={(val: any, name: string) => [`${val} Kbps`, name === 'rx' ? '▼ Download' : '▲ Upload']}
-                                  labelStyle={{ display: 'none' }}
-                                  isAnimationActive={false}
-                                />
-                                <Area type="monotone" dataKey="tx" stroke="#f59e0b" strokeWidth={1.5} fillOpacity={1} fill={`url(#vTx-${idx})`} isAnimationActive={false} dot={false} />
-                                <Area type="monotone" dataKey="rx" stroke="#10b981" strokeWidth={1.5} fillOpacity={1} fill={`url(#vRx-${idx})`} isAnimationActive={false} dot={false} />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                          </div>
-
-                          <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
-                            <div>
-                              <p className="text-[8px] text-zinc-600 uppercase font-bold tracking-wider">Total In</p>
-                              <p className="text-[10px] text-zinc-400 font-mono">{formatBytes(last.rawRxByte)}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[8px] text-zinc-600 uppercase font-bold tracking-wider">Total Out</p>
-                              <p className="text-[10px] text-zinc-400 font-mono">{formatBytes(last.rawTxByte)}</p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </motion.div>
-          ) : view === 'settings' ? (
-            <motion.div 
-              key="settings"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="max-w-4xl mx-auto space-y-8"
-            >
-              <div>
-                <h2 className="text-2xl font-bold">System Settings</h2>
-                <p className="text-sm text-zinc-500">Configure parameters and view system blueprints</p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div 
-                  onClick={() => setView('topology')}
-                  className="bg-white/5 border border-white/10 hover:border-emerald-500/50 hover:bg-emerald-500/5 rounded-3xl p-8 cursor-pointer transition-all group"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 mb-6 group-hover:scale-110 transition-transform">
-                    <Network className="w-8 h-8 text-emerald-500" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Network Topology</h3>
-                  <p className="text-sm text-zinc-400 leading-relaxed">View the logical and physical connectivity map of the entire campus network infrastructure.</p>
-                </div>
-
-                <div 
-                  onClick={() => setView('docs')}
-                  className="bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-blue-500/5 rounded-3xl p-8 cursor-pointer transition-all group"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 mb-6 group-hover:scale-110 transition-transform">
-                    <BookOpen className="w-8 h-8 text-blue-500" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Documentation</h3>
-                  <p className="text-sm text-zinc-400 leading-relaxed">Read guides and understand how the underlying protocols (SNMP, ICMP, API) monitor the network.</p>
-                </div>
-              </div>
-
-              <div className="mt-8">
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-zinc-400" /> Preferences
-                </h3>
-                <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-sm">Theme Mode</h4>
-                      <p className="text-xs text-zinc-400 mt-1">Switch between dark and light appearance</p>
-                    </div>
-                    <div className="flex items-center gap-2 bg-black/40 border border-white/5 p-1 rounded-xl">
-                      <button 
-                        onClick={() => setTheme('light')}
-                        className={cn("p-2 rounded-lg flex items-center gap-2 transition-all", theme === 'light' ? "bg-emerald-500 text-white font-bold" : "text-zinc-500 hover:text-zinc-300")}
-                      >
-                        <Sun className="w-4 h-4" /> <span className="text-[10px] uppercase tracking-wider hidden sm:block">Light</span>
-                      </button>
-                      <button 
-                        onClick={() => setTheme('dark')}
-                        className={cn("p-2 rounded-lg flex items-center gap-2 transition-all", theme === 'dark' ? "bg-zinc-800 text-white font-bold" : "text-zinc-500 hover:text-zinc-300")}
-                      >
-                        <Moon className="w-4 h-4" /> <span className="text-[10px] uppercase tracking-wider hidden sm:block">Dark</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-
-            </motion.div>
-          ) : null}
+          )}
         </AnimatePresence>
-        </main>
-      </div>
-    </div>
-  );
-}
+      </main>
 
-function DynamicTopologyView({ topology, expandedAP, setExpandedAP, setSelectedAPNode, setSelectedSwitchNode }: {
-  topology: any;
-  expandedAP: string | null;
-  setExpandedAP: (id: string | null) => void;
-  setSelectedAPNode?: (node: any) => void;
-  setSelectedSwitchNode?: (node: any) => void;
-}) {
-  if (!topology) return null;
-
-  const statusColor = (s: string) => {
-    if (s === 'online') return 'border-emerald-500/50 bg-emerald-500/5';
-    if (s === 'offline') return 'border-red-500/50 bg-red-500/10';
-    return 'border-zinc-700 bg-zinc-800/30';
-  };
-
-  const statusDot = (s: string) => {
-    if (s === 'online') return 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse';
-    if (s === 'offline') return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]';
-    return 'bg-zinc-500';
-  };
-
-  const statusText = (s: string) => {
-    if (s === 'online') return 'text-emerald-500';
-    if (s === 'offline') return 'text-red-500';
-    return 'text-zinc-500';
-  };
-
-  const connectorLine = (parentStatus: string) => (
-    <div className={cn(
-      "w-px h-8 mx-auto transition-colors duration-500",
-      parentStatus === 'online' ? 'bg-emerald-500/30' : 'bg-red-500/30'
-    )} />
-  );
-
-  const hLine = (parentStatus: string) => (
-    <div className={cn(
-      "absolute top-0 left-10 right-10 h-px",
-      parentStatus === 'online' ? 'bg-emerald-500/30' : 'bg-red-500/30'
-    )} />
-  );
-
-  return (
-    <div className="w-full overflow-x-auto">
-      {/* Internet Root */}
-      <div className="flex flex-col items-center min-w-max mx-auto pb-6">
-        {/* LAYER 0 — Internet */}
-        <div className={cn("rounded-2xl border px-6 py-4 flex items-center gap-4 transition-all duration-500", statusColor(topology.status))}>
-          <div className={cn("w-3 h-3 rounded-full flex-shrink-0", statusDot(topology.status))} />
-          <div>
-            <p className="text-xs font-bold tracking-wider text-zinc-400 uppercase">Internet Gateway</p>
-            <p className="text-base font-bold text-white">{topology.name}</p>
+      <footer className="max-w-7xl mx-auto px-6 py-12 border-t border-white/5">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-2 text-zinc-500 text-xs font-mono">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            System Operational
           </div>
-          <Globe className="w-8 h-8 text-zinc-400 ml-4" />
+          <p className="text-zinc-600 text-xs">© 2026 ITATS Network Intelligence. Powered by Gemini AI.</p>
         </div>
-
-        {connectorLine(topology.status)}
-
-        {/* LAYER 1 — Routers */}
-        <div className="flex gap-6 relative items-start flex-wrap justify-center">
-          {topology.children?.length > 1 && hLine(topology.status)}
-
-          {topology.children?.map((router: any) => (
-            <div key={router.id} className="flex flex-col items-center gap-0">
-              {/* Vertical spacer from hLine */}
-              <div className={cn("w-px h-4", router.status === 'online' ? 'bg-emerald-500/30' : 'bg-red-500/30')} />
-
-              {/* Router Card */}
-              <div className={cn("rounded-2xl border p-5 w-64 transition-all duration-500", statusColor(router.status))}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", statusDot(router.status))} />
-                    <span className={cn("text-[10px] font-bold uppercase tracking-widest", statusText(router.status))}>{router.status}</span>
-                  </div>
-                  {router.isPrimary && (
-                    <span className="text-[8px] px-2 py-0.5 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 rounded font-bold uppercase">Primary</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <Server className="w-7 h-7 text-zinc-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-white truncate">{router.name}</p>
-                    <p className="text-[10px] text-zinc-500 font-mono truncate">{router.host}</p>
-                  </div>
-                </div>
-                {router.status === 'offline' && (
-                  <div className="mt-3 text-[10px] text-red-400/80 bg-red-500/5 rounded-lg px-2 py-1.5 border border-red-500/20">
-                    ⚠ Offline — path ke semua AP terputus
-                  </div>
-                )}
-              </div>
-
-              {connectorLine(router.status)}
-
-              {/* LAYER 2 — Switches */}
-              {router.children?.map((sw: any) => (
-                <div key={sw.id} className="flex flex-col items-center">
-                  <div 
-                    onClick={() => setSelectedSwitchNode?.(sw)}
-                    className={cn("rounded-xl border px-5 py-3 w-56 flex items-center gap-3 transition-all duration-500 cursor-pointer hover:scale-105 hover:border-blue-500/50", statusColor(sw.status))}
-                  >
-                    <div className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", statusDot(sw.status))} />
-                    <HardDrive className="w-5 h-5 text-zinc-400" />
-                    <div className="flex-1">
-                      <p className="text-xs font-bold text-white">{sw.name}</p>
-                      <p className={cn("text-[9px] font-bold uppercase", statusText(sw.status))}>{sw.status}</p>
-                    </div>
-                    <div className="flex-shrink-0 text-[9px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">Detail</div>
-                  </div>
-
-                  {/* APs */}
-                  {sw.children && sw.children.length > 0 ? (
-                    <>
-                      {connectorLine(sw.status)}
-                      <div className="flex flex-wrap gap-4 justify-center relative">
-                        {sw.children.length > 1 && hLine(sw.status)}
-                        {sw.children.map((ap: any) => {
-                          const isExpanded = expandedAP === ap.id;
-                          return (
-                            <div key={ap.id} className="flex flex-col items-center">
-                              <div className={cn("w-px h-4", ap.status === 'online' ? 'bg-emerald-500/30' : 'bg-red-500/30')} />
-                              <div
-                                className={cn(
-                                  "rounded-2xl border transition-all duration-500 cursor-pointer hover:scale-105 w-52 overflow-hidden",
-                                  statusColor(ap.status),
-                                  isExpanded && 'ring-2 ring-emerald-500/40 scale-105'
-                                )}
-                              >
-                                {/* AP Header */}
-                                <div className="p-4" onClick={() => setSelectedAPNode?.(ap)}>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                      <div className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", statusDot(ap.status))} />
-                                      <span className={cn("text-[9px] font-bold uppercase tracking-widest", statusText(ap.status))}>{ap.status}</span>
-                                    </div>
-                                    <Wifi className="w-4 h-4 text-zinc-500" />
-                                  </div>
-                                  <p className="text-sm font-bold text-white truncate">{ap.name}</p>
-                                  <p className="text-[10px] text-zinc-400 truncate">SSID: <span className="text-zinc-300">{ap.ssid || '-'}</span></p>
-
-                                  <div className="mt-3 grid grid-cols-2 gap-2">
-                                    <div className="bg-black/30 rounded-lg p-2 text-center">
-                                      <p className="text-[9px] text-zinc-500 uppercase font-bold">Clients</p>
-                                      <p className={cn("text-base font-bold", ap.clients > 0 ? 'text-emerald-400' : 'text-zinc-500')}>{ap.clients ?? '-'}</p>
-                                    </div>
-                                    <div className="bg-black/30 rounded-lg p-2 text-center">
-                                      <p className="text-[9px] text-zinc-500 uppercase font-bold">Band</p>
-                                      <p className="text-xs font-bold text-zinc-300 truncate">{ap.band || '-'}</p>
-                                    </div>
-                                  </div>
-
-                                  <div className="mt-2 flex items-center justify-between">
-                                    <p className="text-[9px] text-zinc-600">Ch: {ap.channel || '-'}</p>
-                                    <p className="text-[9px] text-zinc-600 bg-white/5 px-2 py-0.5 rounded hover:bg-white/10" onClick={(e) => { e.stopPropagation(); setExpandedAP(isExpanded ? null : ap.id); }}>
-                                      {isExpanded ? '▲ tutup limit' : '▼ detail wifi'}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                {/* AP Client Detail (Expandable) */}
-                                {isExpanded && ap.clientDetails && ap.clientDetails.length > 0 && (
-                                  <div className="border-t border-white/10 p-3 space-y-2">
-                                    <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Connected Clients ({ap.clientDetails.length})</p>
-                                    {ap.clientDetails.map((c: any, idx: number) => (
-                                      <div key={idx} className="bg-black/40 rounded-lg p-2 text-[9px] font-mono space-y-1">
-                                        <div className="flex justify-between">
-                                          <span className="text-zinc-500">MAC</span>
-                                          <span className="text-zinc-300 truncate max-w-[110px]">{c.mac}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                          <span className="text-zinc-500">Signal</span>
-                                          <span className={cn(c.signal && Number(c.signal) > -70 ? 'text-emerald-400' : 'text-amber-400')}>{c.signal} dBm</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                          <span className="text-zinc-500">Uptime</span>
-                                          <span className="text-zinc-400">{c.uptime}</span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {isExpanded && (!ap.clientDetails || ap.clientDetails.length === 0) && (
-                                  <div className="border-t border-white/10 p-3 text-center">
-                                    <p className="text-[10px] text-zinc-600">No clients connected</p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {connectorLine(sw.status)}
-                      <div className="w-44 h-24 rounded-2xl border border-dashed border-white/10 flex flex-col items-center justify-center text-center gap-1">
-                        <Wifi className="w-6 h-6 text-zinc-700" />
-                        <p className="text-[10px] text-zinc-600">No APs detected</p>
-                        <p className="text-[9px] text-zinc-700">
-                          {router.status === 'offline' ? '(Router offline)' : '(No wireless interfaces)'}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        {/* Summary stats */}
-        {topology.children && (
-          <div className="mt-8 flex flex-wrap gap-4 justify-center w-full max-w-3xl">
-            {(() => {
-              let totalRouters = 0, onlineRouters = 0, totalAPs = 0, onlineAPs = 0, totalClients = 0;
-              topology.children.forEach((r: any) => {
-                totalRouters++;
-                if (r.status === 'online') onlineRouters++;
-                r.children?.forEach((sw: any) => {
-                  sw.children?.forEach((ap: any) => {
-                    totalAPs++;
-                    if (ap.status === 'online') { onlineAPs++; totalClients += (ap.clients || 0); }
-                  });
-                });
-              });
-              return (
-                <>
-                  <div className="flex-1 min-w-[130px] p-4 bg-white/5 border border-white/10 rounded-2xl text-center">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Routers</p>
-                    <p className="text-xl font-bold"><span className="text-emerald-500">{onlineRouters}</span>/{totalRouters}</p>
-                    <p className="text-[9px] text-zinc-600 mt-1">{totalRouters - onlineRouters > 0 ? `${totalRouters - onlineRouters} offline` : 'All online'}</p>
-                  </div>
-                  <div className="flex-1 min-w-[130px] p-4 bg-white/5 border border-white/10 rounded-2xl text-center">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Access Points</p>
-                    <p className="text-xl font-bold"><span className="text-emerald-500">{onlineAPs}</span>/{totalAPs}</p>
-                    <p className="text-[9px] text-zinc-600 mt-1">{totalAPs - onlineAPs > 0 ? `${totalAPs - onlineAPs} offline/disabled` : 'All active'}</p>
-                  </div>
-                  <div className="flex-1 min-w-[130px] p-4 bg-white/5 border border-white/10 rounded-2xl text-center">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">WiFi Clients</p>
-                    <p className="text-xl font-bold text-emerald-400">{totalClients}</p>
-                    <p className="text-[9px] text-zinc-600 mt-1">across all APs</p>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </div>
+      </footer>
     </div>
   );
 }
@@ -3345,13 +1566,12 @@ function StatCard({ icon, label, value, trend, color }: {
   label: string; 
   value: string | number; 
   trend: string;
-  color: 'emerald' | 'blue' | 'amber' | 'red';
+  color: 'emerald' | 'blue' | 'amber';
 }) {
   const colors = {
     emerald: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
     blue: "text-blue-500 bg-blue-500/10 border-blue-500/20",
     amber: "text-amber-500 bg-amber-500/10 border-amber-500/20",
-    red: "text-red-500 bg-red-500/10 border-red-500/20",
   };
 
   return (

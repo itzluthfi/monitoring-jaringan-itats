@@ -6,27 +6,6 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-:root[data-theme='light'] {
-  /* Invert main structural colors */
-  --color-zinc-950: #f8fafc;
-  --color-zinc-900: #ffffff;
-  --color-zinc-800: #f1f5f9;
-  --color-zinc-700: #e2e8f0;
-  --color-zinc-600: #64748b;
-  --color-zinc-500: #94a3b8;
-  --color-zinc-400: #cbd5e1;
-  --color-zinc-300: #e2e8f0;
-  --color-zinc-200: #f1f5f9;
-  --color-zinc-100: #f8fafc;
-  
-  /* Invert absolute constants used heavily */
-  --color-black: #ffffff;
-  --color-white: #0a0a0a;
-
-  /* Since text-white turns to black, ensure readability */
-}
-
-
 /* Custom Leaflet Styles */
 .leaflet-container {
   font-family: var(--font-sans);
