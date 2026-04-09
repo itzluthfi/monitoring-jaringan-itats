@@ -131,11 +131,30 @@ export function MapView() {
                   }}
                >
                  <Popup className="custom-popup">
-                   <div className="font-sans text-sm">
-                     <h3 className="font-bold text-gray-900 text-base border-b pb-1 mb-2">{building.name}</h3>
-                     <div className="flex justify-between mb-2">
-                       <span className="text-gray-600">Density Total:</span>
-                       <span className="font-bold">{bCurrent} / {bCap}</span>
+                   <div className="font-sans text-sm min-w-[200px]">
+                     <div className="flex items-center gap-2 border-b pb-2 mb-3">
+                       <div className={`w-2 h-2 rounded-full ${building.hasWifi !== false ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                       <h3 className="font-bold text-gray-900 text-base">{building.name}</h3>
+                     </div>
+                     <div className="flex justify-between mb-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                       <span>Total Clients</span>
+                       <span className="text-gray-900">{bCurrent} / {bCap}</span>
+                     </div>
+                     
+                     <div className="space-y-3 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                       {building.floors.map((floor, idx) => (
+                         <div key={idx}>
+                           <span className="text-xs font-bold text-indigo-600 mb-1 block">{floor.level}</span>
+                           <div className="space-y-1">
+                             {floor.rooms.map(room => (
+                               <div key={room.id} className="flex justify-between items-center text-xs bg-gray-50 p-1.5 rounded border border-gray-100">
+                                 <span className="text-gray-700 truncate max-w-[120px]">{room.name}</span>
+                                 <span className="font-mono text-gray-500">{room.current}/{room.cap}</span>
+                               </div>
+                             ))}
+                           </div>
+                         </div>
+                       ))}
                      </div>
                    </div>
                  </Popup>

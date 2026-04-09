@@ -21,7 +21,7 @@ export interface Room {
 }
 
 export interface Floor {
-  level: number;
+  level: number | string;
   rooms: Room[];
 }
 
@@ -30,6 +30,7 @@ export interface Building {
   name: string;
   lat: number;
   lng: number;
+  hasWifi?: boolean;
   floors: Floor[];
 }
 
@@ -73,6 +74,8 @@ export interface Notification {
   type: 'info' | 'warning' | 'error' | 'critical';
   title: string;
   message: string;
+  action_url?: string;
+  entity_type?: 'mikrotik' | 'ap';
   is_read: number;
   created_at: string;
 }

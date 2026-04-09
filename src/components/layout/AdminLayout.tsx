@@ -47,18 +47,29 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
                           </div>
                           <div className="ml-3 flex-1">
                             <p className="text-sm font-bold text-white uppercase tracking-wider">{n.title}</p>
-                            <p className="mt-1 text-sm text-zinc-400">{n.message}</p>
-                            {n.device_name && <p className="mt-2 text-xs text-zinc-500 font-mono">Terminal: {n.device_name}</p>}
+                            <p className="mt-1 text-sm text-zinc-400 leading-relaxed">{n.message}</p>
+                            <div className="mt-3 flex gap-2">
+                               {n.action_url && (
+                                 <button 
+                                   onClick={() => {
+                                      authFetch(`/api/notifications/${n.id}/read`, { method: 'POST' });
+                                      toast.dismiss(t.id);
+                                      window.location.href = n.action_url || '#';
+                                   }}
+                                   className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
+                                 >
+                                   Investigasi Sekarang
+                                 </button>
+                               )}
+                               <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-bold rounded-lg transition-colors">
+                                 Abaikan
+                               </button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <div className="flex border-l border-zinc-800">
-                        <button onClick={() => toast.dismiss(t.id)} className="w-full border border-transparent rounded-none rounded-r-2xl p-4 flex items-center justify-center text-sm font-medium text-indigo-400 hover:text-indigo-300 hover:bg-zinc-800/50 focus:outline-none transition-colors">
-                          Tutup
-                        </button>
-                      </div>
                     </div>
-                  ), { duration: 8000, position: 'top-center' });
+                  ), { duration: 10000, position: 'top-center' });
                 });
               }
               setLastSeenId(latestIdInFetch);
@@ -116,36 +127,66 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
 
               {showNotifications && (
                 <div className="absolute right-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50">
-                  <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-                    <h3 className="font-semibold text-white">Notifications</h3>
-                    <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full">{unreadCount} New</span>
+                  <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950/50">
+                    <h3 className="font-semibold text-white">System Notifications</h3>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        authFetch('/api/notifications/read-all', { method: 'POST' }).then(() => {
+                          setNotifications(notifications.map(n => ({...n, is_read: 1})));
+                        });
+                      }}
+                      className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-wider"
+                    >
+                      Mark all as read
+                    </button>
                   </div>
-                  <div className="max-h-[300px] overflow-y-auto">
+                  <div className="max-h-[350px] overflow-y-auto custom-scrollbar">
                     {notifications.length > 0 ? (
                       <div className="divide-y divide-zinc-800">
                         {notifications.map((notif: Notification) => (
                           <div 
                             key={notif.id} 
-                            className={`p-4 hover:bg-zinc-800/50 transition-colors ${!notif.is_read ? 'bg-indigo-500/5' : ''}`}
+                            onClick={() => {
+                               if (notif.action_url) window.location.href = notif.action_url;
+                               setShowNotifications(false);
+                            }}
+                            className={`p-4 hover:bg-zinc-800/80 transition-all cursor-pointer relative group ${!notif.is_read ? 'bg-indigo-500/5' : ''}`}
                           >
+                            {!notif.is_read && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500" />}
                             <div className="flex items-center justify-between mb-1">
-                              <span className={`text-xs font-semibold ${notif.type === 'critical' ? 'text-rose-400' : 'text-indigo-400'}`}>
+                              <span className={`text-[11px] font-bold uppercase tracking-tight ${notif.type === 'critical' ? 'text-rose-400' : 'text-indigo-400'}`}>
                                 {notif.title}
                               </span>
                             </div>
-                            <p className="text-sm text-zinc-400 mt-1">{notif.message}</p>
-                            <span className="text-xs text-zinc-600 mt-2 block">
-                              {new Date(notif.created_at).toLocaleString()}
-                            </span>
+                            <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">{notif.message}</p>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-[10px] text-zinc-600 font-mono">
+                                {new Date(notif.created_at).toLocaleTimeString()}
+                              </span>
+                              {notif.action_url && (
+                                <span className="text-[10px] text-indigo-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                  Lihat Detail &rarr;
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="p-8 text-center text-zinc-500">
-                        <Bell className="w-8 h-8 opacity-20 mx-auto mb-3" />
-                        <p className="text-sm">No new notifications</p>
+                      <div className="p-10 text-center text-zinc-600">
+                        <Bell className="w-10 h-10 opacity-10 mx-auto mb-3" />
+                        <p className="text-sm">No recent activity</p>
                       </div>
                     )}
+                  </div>
+                  <div className="p-3 border-t border-zinc-800 bg-zinc-950/30 text-center">
+                     <button 
+                       onClick={() => { setShowNotifications(false); window.location.href = '/admin/notifications'; }}
+                       className="text-xs text-zinc-500 hover:text-white transition-colors"
+                     >
+                       View All Logs
+                     </button>
                   </div>
                 </div>
               )}

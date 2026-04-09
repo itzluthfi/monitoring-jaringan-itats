@@ -169,71 +169,49 @@ const CAMPUS_STRUCTURE = [
 ];
 
 dashboardRouter.get("/campus-map", async (req, res) => {
-  let isSystemOnline = true;
-  let totalRealClients = 0;
-  
-  if (process.env.MIKROTIK_SIMULATION_MODE !== "true") {
-    try {
-      const [devices]: any = await db.query("SELECT status FROM mikrotik_devices");
-      isSystemOnline = devices.some((d: any) => d.status === 'online');
-      
-      const [latestRow]: any = await db.query(`
-        SELECT SUM(client_count) as total 
-        FROM wifi_density 
-        WHERE timestamp = (SELECT MAX(timestamp) FROM wifi_density)
-      `);
-      totalRealClients = latestRow[0]?.total || 0;
-    } catch (error) {
-      console.error(error);
-    }
-  }
+  try {
+    const [devices]: any = await db.query("SELECT * FROM mikrotik_devices");
+    const [aps]: any = await db.query("SELECT * FROM mikrotik_aps");
 
-  // Calculate total campus capacity for distribution
-  const totalCampusCap = CAMPUS_STRUCTURE.reduce((acc, b) => acc + (b.hasWifi ? b.floors.reduce((fa, f) => fa + f.rooms.reduce((ra, r) => ra + r.cap, 0), 0) : 0), 0);
-
-  const data = CAMPUS_STRUCTURE.map(building => ({
-    ...building,
-    floors: building.floors.map(floor => ({
-      ...floor,
-      rooms: floor.rooms.map(room => {
-        if (!building.hasWifi) {
-          return { ...room, current: 0, status: 'offline', latency: 0, noWifi: true };
-        }
+    const data = devices.filter((d: any) => d.lat && d.lng).map((device: any) => {
+        const deviceAPs = aps.filter((a: any) => a.mikrotik_id === device.id);
+        const floorsMap: Record<string, any[]> = {};
         
-        if (!isSystemOnline && process.env.MIKROTIK_SIMULATION_MODE !== "true") {
-           return { ...room, current: 0, status: 'offline', latency: 0 };
-        }
-        
-        let currentClients = 0;
-        let latency = 5;
-        let onlineStatus = 'online';
+        deviceAPs.forEach((ap: any) => {
+            const label = ap.group_label || "General Area";
+            if (!floorsMap[label]) floorsMap[label] = [];
+            floorsMap[label].push({
+                id: `ap-${ap.id}`,
+                name: ap.name,
+                cap: 50,
+                current: process.env.MIKROTIK_SIMULATION_MODE === "true" ? Math.floor(Math.random() * 40) : 0, 
+                status: device.status === 'online' ? 'online' : 'offline'
+            });
+        });
 
-        if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
-           const isDown = Math.random() < 0.05;
-           onlineStatus = isDown ? 'offline' : 'online';
-           currentClients = isDown ? 0 : getSimulatedAPData(room.cap);
-           latency = isDown ? 0 : 5 + Math.floor(Math.random() * 20);
-        } else {
-           if (totalCampusCap > 0 && totalRealClients > 0) {
-              const ratio = room.cap / totalCampusCap;
-              const fuzz = 0.8 + (Math.random() * 0.4);
-              currentClients = Math.floor(totalRealClients * ratio * fuzz);
-           }
-           if (totalRealClients > 0 && currentClients === 0 && room.name.length % 3 === 0) {
-              currentClients = 1;
-           }
+        const floors = Object.keys(floorsMap).map(key => ({
+            level: key,
+            rooms: floorsMap[key]
+        }));
+        
+        if (floors.length === 0) {
+           floors.push({ level: 'Router Core', rooms: [{ id: `virt-${device.id}`, name: 'Eth Interfaces', cap: 0, current: 0, status: device.status }] });
         }
 
         return {
-          ...room,
-          current: currentClients,
-          status: onlineStatus,
-          latency
+            id: `dev-${device.id}`,
+            name: device.name,
+            lat: device.lat,
+            lng: device.lng,
+            hasWifi: deviceAPs.length > 0,
+            floors
         };
-      })
-    }))
-  }));
-  res.json(data);
+    });
+    
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 dashboardRouter.get("/current-status", async (req, res) => {
@@ -599,7 +577,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
           // ─────────────────────────────────────────────────
           const dhcpLeases: any[] = await safeWrite(["/ip/dhcp-server/lease/print"]);
 
-          const dhcpMap: Record<string, { ip: string; hostname: string }> = {};
+          const dhcpMap: Record<string, { ip: string; hostname: string, isStatic: boolean }> = {};
           if (Array.isArray(dhcpLeases)) {
             dhcpLeases.forEach((lease: any) => {
               const mac = (lease['mac-address'] || '').toLowerCase();
@@ -607,6 +585,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                 dhcpMap[mac] = {
                   ip: lease['address'] || '-',
                   hostname: lease['host-name'] || lease['comment'] || '-',
+                  isStatic: String(lease['dynamic']) !== 'true'
                 };
               }
             });
@@ -615,11 +594,12 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
 
           const enrichClient = (c: any) => {
             const mac = (c['mac-address'] || '').toLowerCase();
-            const dhcp = dhcpMap[mac] || { ip: '-', hostname: '-' };
+            const dhcp = dhcpMap[mac] || { ip: '-', hostname: '-', isStatic: false };
             return {
               mac: c['mac-address'] || '-',
               ip: dhcp.ip,
               hostname: dhcp.hostname,
+              isStatic: dhcp.isStatic,
               signal: c['signal-strength'] || c['rx-signal'] || c['signal'] || '-',
               txRate: c['tx-rate'] || c['tx-rate-set'] || '-',
               rxRate: c['rx-rate'] || c['rx-rate-set'] || '-',
@@ -999,17 +979,21 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
 
                 accessPoints = Object.entries(groupedByServer).map(([serverName, leaseList]) => {
                   const serverInfo = serverInfoMap[serverName] || {};
-                  const clientDetailsFromDHCP = leaseList.slice(0, 50).map((lease: any) => ({
-                    mac: lease['mac-address'] || '-',
-                    ip: lease['address'] || lease['active-address'] || '-',
-                    hostname: lease['host-name'] || lease['comment'] || '-',
-                    signal: '-',
-                    txRate: '-',
-                    rxRate: '-',
-                    uptime: lease['expires-after'] ? `expires: ${lease['expires-after']}` : '-',
-                    interface: lease['active-server'] || serverName,
-                    status: lease['status'] || 'bound',
-                  }));
+                  const clientDetailsFromDHCP = leaseList.slice(0, 50).map((lease: any) => {
+                    const isDynamic = String(lease['dynamic']) === 'true';
+                    return {
+                      mac: lease['mac-address'] || '-',
+                      ip: lease['address'] || lease['active-address'] || '-',
+                      hostname: lease['host-name'] || lease['comment'] || '-',
+                      isStatic: !isDynamic,
+                      signal: isDynamic ? '-' : 'STATIC_IP_LEASE',
+                      txRate: '-',
+                      rxRate: '-',
+                      uptime: lease['expires-after'] ? `expires: ${lease['expires-after']}` : '-',
+                      interface: lease['active-server'] || serverName,
+                      status: lease['status'] || 'bound',
+                    };
+                  });
 
                   return {
                     id: `segment-dhcp-${device.id}-${serverName}`,
@@ -1025,9 +1009,48 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                     clientDetails: clientDetailsFromDHCP,
                   };
                 });
-              } else {
+              } else if (Array.isArray(neighbors) && neighbors.length > 0) {
+                // ─── PATH K: Core Router Fallback (Neighbors as Nodes) ───
                 wifiSource = 'none';
-                console.log(`[Topology] ${device.name}: Absolutely no WiFi or segment data found.`);
+                console.log(`[Topology] ${device.name}: PATH K - No clients but ${neighbors.length} neighbors found. Mapping as Core Router.`);
+                
+                accessPoints = neighbors.slice(0, 15).map((n: any, idx: number) => ({
+                  id: `neighbor-node-${device.id}-${idx}`,
+                  name: n.identity || n['system-name'] || n.board || 'Backbone Link',
+                  type: 'ap' as const,
+                  wifiSource: 'none',
+                  status: 'online',
+                  ssid: n.board || 'Core Link',
+                  band: n.interface || 'Eth',
+                  channel: n.address || 'Layer 2',
+                  frequency: '-',
+                  clients: 0,
+                  clientDetails: [],
+                  isCoreLink: true
+                }));
+              } else {
+                 // ─── PATH L: Physical Interface Fallback (Last Resort) ───
+                 const interfaces: any[] = await safeWrite(["/interface/print", "?status=running"]);
+                 if (Array.isArray(interfaces) && interfaces.length > 0) {
+                    wifiSource = 'none';
+                    console.log(`[Topology] ${device.name}: PATH L - Showing ${interfaces.length} active physical interfaces.`);
+                    accessPoints = interfaces.filter(i => i.type === 'ether' || i.type === 'vlan' || i.type === 'bridge').map((i: any) => ({
+                      id: `iface-node-${device.id}-${i.name}`,
+                      name: i.name,
+                      type: 'ap' as const,
+                      wifiSource: 'none',
+                      status: 'online',
+                      ssid: i.comment || '-',
+                      band: i.type,
+                      channel: i['last-link-up-time'] || '-',
+                      frequency: '-',
+                      clients: 0,
+                      clientDetails: []
+                    }));
+                 } else {
+                    wifiSource = 'none';
+                    console.log(`[Topology] ${device.name}: Absolutely no WiFi, neighbor, or interface data found.`);
+                 }
               }
             }
           }

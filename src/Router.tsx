@@ -12,6 +12,8 @@ import { VlanView } from './views/VlanView';
 import { DevicesView } from './views/DevicesView';
 import { SettingsView } from './views/SettingsView';
 import { NotificationsView } from './views/NotificationsView';
+import { AccessPointsView } from './views/AccessPointsView';
+import { LogsView } from './views/LogsView';
 import { Toaster } from 'react-hot-toast';
 
 export default function Router() {
@@ -45,6 +47,8 @@ export default function Router() {
           <Route path="topology" element={<TopologyView />} />
           <Route path="vlan/*" element={<VlanView />} />
           <Route path="devices/*" element={<DevicesView />} />
+          <Route path="aps" element={<AccessPointsView />} />
+          <Route path="logs" element={<LogsView />} />
           <Route path="settings" element={<SettingsView />} />
           <Route path="notifications" element={<NotificationsView />} />
         </Route>

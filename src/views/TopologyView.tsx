@@ -16,6 +16,7 @@ interface ClientDetail {
   uptime: string;
   interface: string;
   status?: string;
+  isStatic?: boolean;
 }
 
 interface TopologyNode {
@@ -311,12 +312,17 @@ function DetailPanel({ node, topology, onClose }: {
               Connected Clients ({node.clientDetails.length})
             </p>
             <div className="space-y-2">
-              {node.clientDetails.map((cl, i) => (
-                <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs space-y-1.5">
+              {[...node.clientDetails].sort((a, b) => (b.isStatic ? 1 : 0) - (a.isStatic ? 1 : 0)).map((cl, i) => (
+                <div key={i} className={`bg-zinc-900 border ${cl.isStatic ? 'border-violet-500/50 shadow-[0_0_10px_rgba(139,92,246,0.1)]' : 'border-zinc-800'} rounded-xl p-3 text-xs space-y-1.5`}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-indigo-300 text-[11px]">{cl.mac}</span>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {cl.status && cl.status !== '-' && (
+                      {cl.isStatic && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">
+                          INFRA
+                        </span>
+                      )}
+                      {cl.status && cl.status !== '-' && !cl.isStatic && (
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                           cl.status === 'bound' ? 'bg-emerald-500/20 text-emerald-400' :
                           cl.status === 'waiting' ? 'bg-amber-500/20 text-amber-400' :
@@ -324,7 +330,7 @@ function DetailPanel({ node, topology, onClose }: {
                         }`}>{cl.status}</span>
                       )}
                       {cl.hostname && cl.hostname !== '-' && (
-                        <span className="text-zinc-300 font-medium truncate max-w-[90px]" title={cl.hostname}>{cl.hostname}</span>
+                        <span className={`${cl.isStatic ? 'text-violet-300 font-bold' : 'text-zinc-300 font-medium'} truncate max-w-[90px]`} title={cl.hostname}>{cl.hostname}</span>
                       )}
                     </div>
                   </div>

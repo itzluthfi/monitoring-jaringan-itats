@@ -13,7 +13,7 @@ notificationsRouter.get('/', requireAuth, async (req, res) => {
   }
 });
 
-notificationsRouter.put('/read-all', requireAuth, async (req, res) => {
+notificationsRouter.post('/read-all', requireAuth, async (req, res) => {
   try {
     await db.query("UPDATE notifications SET is_read = 1");
     res.json({ success: true });
@@ -22,7 +22,7 @@ notificationsRouter.put('/read-all', requireAuth, async (req, res) => {
   }
 });
 
-notificationsRouter.put('/:id/read', requireAuth, async (req, res) => {
+notificationsRouter.post('/:id/read', requireAuth, async (req, res) => {
   try {
     await db.query("UPDATE notifications SET is_read = 1 WHERE id = ?", [req.params.id]);
     res.json({ success: true });

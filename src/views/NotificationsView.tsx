@@ -98,6 +98,17 @@ export function NotificationsView() {
                   </div>
 
                   <div className="flex items-center gap-2 sm:self-center self-end">
+                    {notif.action_url && (
+                        <button 
+                          onClick={() => {
+                              markRead(notif.id);
+                              window.location.href = notif.action_url;
+                          }}
+                          className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20"
+                        >
+                          Investigasi
+                        </button>
+                    )}
                     {notif.is_read === 0 && (
                       <button 
                         onClick={() => markRead(notif.id)}

@@ -444,7 +444,7 @@ mikrotiksRouter.delete('/:id/queues/:qid', requireAuth, async (req, res) => {
 });
 
 // ─── Debug: Lihat raw data WiFi dari MikroTik ───
-mikrotiksRouter.get('/:id/debug-wifi', requireAuth, async (req, res) => {
+mikrotiksRouter.get('/:id/debug-wifi', async (req, res) => {
   try {
     const [[device]]: any = await db.query("SELECT * FROM mikrotik_devices WHERE id = ?", [req.params.id]);
     if (!device) return res.status(404).json({ error: "Device not found" });

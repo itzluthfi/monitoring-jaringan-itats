@@ -57,6 +57,20 @@ export const initializeDB = async () => {
     `);
 
     await db.query(`
+      CREATE TABLE IF NOT EXISTS mikrotik_aps (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        mikrotik_id INT NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        ip_address VARCHAR(100) NULL,
+        group_label VARCHAR(100),
+        lat FLOAT NULL,
+        lng FLOAT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_mikrotik (mikrotik_id)
+      )
+    `);
+
+    await db.query(`
       CREATE TABLE IF NOT EXISTS wifi_density (
         id INT AUTO_INCREMENT PRIMARY KEY,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -73,7 +87,9 @@ export const initializeDB = async () => {
         type VARCHAR(50),
         title VARCHAR(255),
         message TEXT,
-        is_read BOOLEAN DEFAULT 0,
+        action_url VARCHAR(255) NULL,
+        entity_type VARCHAR(50) DEFAULT 'mikrotik',
+        is_read TINYINT DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -87,6 +103,19 @@ export const initializeDB = async () => {
         tx_byte BIGINT DEFAULT 0,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_device_time (device_id, timestamp)
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS mikrotik_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        device_id INT NOT NULL,
+        mikrotik_id VARCHAR(50), 
+        time VARCHAR(100),
+        topics VARCHAR(255),
+        message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_lookup (device_id, created_at)
       )
     `);
 
