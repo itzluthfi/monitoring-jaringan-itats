@@ -141,7 +141,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         {/* Back to public */}
         <p className="text-center mt-6">
           <button
-            onClick={() => window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate'))}
+            onClick={() => {
+              window.history.pushState({}, '', '/');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
             className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors underline underline-offset-4"
           >
             ← Kembali ke Halaman Publik
