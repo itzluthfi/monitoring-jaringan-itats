@@ -36,14 +36,14 @@ accessPointsRouter.get("/:id", async (req, res) => {
 // CREATE AP
 accessPointsRouter.post("/", async (req, res) => {
   try {
-    const { mikrotik_id, name, group_label, lat, lng, ip_address } = req.body;
+    const { mikrotik_id, name, group_label, lat, lng, ip_address, mac_address, interface_name, mode } = req.body;
     if (!mikrotik_id || !name) {
       return res.status(400).json({ error: "mikrotik_id and name are required." });
     }
     
     const [result]: any = await db.query(
-      "INSERT INTO mikrotik_aps (mikrotik_id, name, group_label, lat, lng, ip_address) VALUES (?, ?, ?, ?, ?, ?)",
-      [mikrotik_id, name, group_label || null, lat || null, lng || null, ip_address || null]
+      "INSERT INTO mikrotik_aps (mikrotik_id, name, group_label, lat, lng, ip_address, mac_address, interface_name, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [mikrotik_id, name, group_label || null, lat || null, lng || null, ip_address || null, mac_address || null, interface_name || null, mode || 'ap']
     );
     res.status(201).json({ id: result.insertId, message: "AP created successfully" });
   } catch (err: any) {
@@ -54,10 +54,10 @@ accessPointsRouter.post("/", async (req, res) => {
 // UPDATE AP
 accessPointsRouter.put("/:id", async (req, res) => {
   try {
-    const { mikrotik_id, name, group_label, lat, lng, ip_address } = req.body;
+    const { mikrotik_id, name, group_label, lat, lng, ip_address, mac_address, interface_name, mode } = req.body;
     await db.query(
-      "UPDATE mikrotik_aps SET mikrotik_id = ?, name = ?, group_label = ?, lat = ?, lng = ?, ip_address = ? WHERE id = ?",
-      [mikrotik_id, name, group_label || null, lat || null, lng || null, ip_address || null, req.params.id]
+      "UPDATE mikrotik_aps SET mikrotik_id = ?, name = ?, group_label = ?, lat = ?, lng = ?, ip_address = ?, mac_address = ?, interface_name = ?, mode = ? WHERE id = ?",
+      [mikrotik_id, name, group_label || null, lat || null, lng || null, ip_address || null, mac_address || null, interface_name || null, mode || 'ap', req.params.id]
     );
     res.json({ message: "AP updated successfully" });
   } catch (err: any) {

@@ -65,6 +65,7 @@ function APCard({ node, selected, onClick }: { node: TopologyNode; selected: boo
       onClick={onClick}
       className={`flex flex-col items-center p-2.5 rounded-xl border backdrop-blur-xl transition-all duration-200 hover:scale-105 w-[108px]
         ${selected ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-zinc-950' : ''}
+        ${node.status === 'offline' ? 'grayscale opacity-60' : ''}
         ${c.border} bg-zinc-900/90 shadow-md`}
     >
       <div className={`p-1.5 rounded-lg mb-1 ${c.bg}`}>

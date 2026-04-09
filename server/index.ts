@@ -12,6 +12,7 @@ import { notificationsRouter } from "./routes/notifications.route.js";
 import { accessPointsRouter } from "./routes/access_points.route.js";
 import { vlanRouter } from './routes/vlan.route';
 import { logsRouter } from './routes/logs.route';
+import { settingsRouter } from './routes/settings.route';
 import { requireAuth } from './middleware/auth';
 
 dotenv.config();
@@ -62,6 +63,7 @@ app.use('/api', requireAuth, dashboardRouter);
 app.use("/api/notifications", requireAuth, notificationsRouter);
 app.use("/api/access-points", requireAuth, accessPointsRouter);
 app.use("/api/logs", requireAuth, logsRouter);
+app.use("/api/settings", requireAuth, settingsRouter);
 
 // ── Background Jobs ─────────────────────────────────────────────────────────
 
@@ -194,7 +196,7 @@ setInterval(async () => {
     return;
   }
   try {
-    const [devices]: any = await db.query("SELECT * FROM mikrotik_devices WHERE status = 'online'");
+    const [devices]: any = await db.query("SELECT * FROM mikrotik_devices WHERE status = 'online' AND logs_enabled = 1");
     for (const device of devices) {
       try {
         const client = createMikrotikClient(device);
@@ -206,7 +208,6 @@ setInterval(async () => {
 
         for (const log of logs) {
           // Check if this log already exists in our DB to prevent duplication
-          // We use combination of device_id, time, and message for uniqueness check
           const [exists]: any = await db.query(
             "SELECT id FROM mikrotik_logs WHERE device_id = ? AND time = ? AND message = ? LIMIT 1",
             [device.id, log.time, log.message]
@@ -229,8 +230,14 @@ setInterval(async () => {
       }
     }
 
-    // Auto-delete logs older than 30 days to save space
-    await db.query("DELETE FROM mikrotik_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)");
+    // Auto-delete logs based on system settings
+    const [[retention]]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = ?", ['log_retention_days']).catch(() => [[{ key_value: '30' }]]);
+    const days = parseInt(retention?.key_value || '30');
+    const [delResult]: any = await db.query(`DELETE FROM mikrotik_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)`, [days]);
+    
+    if (delResult.affectedRows > 0) {
+      console.log(`[Log-Archive] 🗑️ Auto-cleanup: Removed ${delResult.affectedRows} logs older than ${days} days.`);
+    }
     
   } catch (err) {
     console.error("[Log-Archive] Worker error:", err);

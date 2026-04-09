@@ -6,7 +6,7 @@ export const logsRouter = Router();
 
 logsRouter.get('/', requireAuth, async (req, res) => {
   try {
-    const { device_id, search, topics, limit = 100, page = 1, grouped = 'false' } = req.query;
+    const { device_id, search, topics, limit = 100, page = 1, grouped = 'false', startDate, endDate, sort = 'desc' } = req.query;
     const isGrouped = grouped === 'true';
     
     let query = "";
@@ -46,11 +46,20 @@ logsRouter.get('/', requireAuth, async (req, res) => {
       query += " AND l.topics LIKE ?";
       params.push(`%${topics}%`);
     }
+    
+    if (startDate) {
+      query += " AND l.created_at >= ?";
+      params.push((startDate as string).replace('T', ' '));
+    }
+    if (endDate) {
+      query += " AND l.created_at <= ?";
+      params.push((endDate as string).replace('T', ' '));
+    }
 
     if (isGrouped) {
-      query += " GROUP BY l.device_id, d.name, l.message, l.topics ORDER BY last_seen DESC";
+      query += ` GROUP BY l.device_id, d.name, l.message, l.topics ORDER BY last_seen ${sort === 'asc' ? 'ASC' : 'DESC'}`;
     } else {
-      query += " ORDER BY l.id DESC";
+      query += ` ORDER BY l.id ${sort === 'asc' ? 'ASC' : 'DESC'}`;
     }
 
     query += " LIMIT ? OFFSET ?";
@@ -70,6 +79,9 @@ logsRouter.get('/', requireAuth, async (req, res) => {
     if (device_id) { countQuery += " AND l.device_id = ?"; countParams.push(device_id); }
     if (search) { countQuery += " AND l.message LIKE ?"; countParams.push(`%${search}%`); }
     if (topics) { countQuery += " AND l.topics LIKE ?"; countParams.push(`%${topics}%`); }
+    if (topics) { countQuery += " AND l.topics LIKE ?"; countParams.push(`%${topics}%`); }
+    if (startDate) { countQuery += " AND l.created_at >= ?"; countParams.push((startDate as string).replace('T', ' ')); }
+    if (endDate) { countQuery += " AND l.created_at <= ?"; countParams.push((endDate as string).replace('T', ' ')); }
     
     if (isGrouped) {
         countQuery += " GROUP BY l.device_id, l.message, l.topics) as sub";
@@ -122,6 +134,38 @@ logsRouter.post('/seed', requireAuth, async (req, res) => {
 
     res.json({ success: true, message: "Demo logs seeded successfully" });
   } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+logsRouter.post('/manual-cleanup', requireAuth, async (req, res) => {
+  try {
+    const { startDate, endDate, deviceIds } = req.body;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: "Start and End dates are required" });
+    }
+
+    let sql = "DELETE FROM mikrotik_logs WHERE created_at BETWEEN ? AND ?";
+    const params: any[] = [
+      startDate.replace('T', ' '), 
+      endDate.replace('T', ' ')
+    ];
+
+    // Added device filtering: null or empty means all sources
+    if (deviceIds && Array.isArray(deviceIds) && deviceIds.length > 0) {
+      sql += ` AND device_id IN (${deviceIds.map(() => '?').join(',')})`;
+      params.push(...deviceIds);
+    }
+
+    const [result]: any = await db.query(sql, params);
+
+    res.json({ 
+      success: true, 
+      message: `${result.affectedRows} logs deleted successfully` 
+    });
+  } catch (err) {
+    console.error("[Cleanup-API] Error:", err);
     res.status(500).json({ error: String(err) });
   }
 });

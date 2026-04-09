@@ -107,49 +107,51 @@ export function AccessPointsView() {
           <table className="w-full text-sm text-left whitespace-nowrap">
             <thead className="text-xs text-zinc-400 uppercase bg-zinc-950/50 border-b border-zinc-800">
               <tr>
-                <th className="px-6 py-4 font-semibold">AP Name & IP</th>
+                 <th className="px-6 py-4 font-semibold">AP Name & IP</th>
                 <th className="px-6 py-4 font-semibold">Uplink Router</th>
-                <th className="px-6 py-4 font-semibold">Group / Location</th>
-                <th className="px-6 py-4 font-semibold">Position</th>
+                <th className="px-6 py-4 font-semibold">Type</th>
+                <th className="px-6 py-4 font-semibold">Status</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
               {aps.map((ap) => {
+                const isOnline = ap.status === 'online';
                 return (
                   <tr key={ap.id} className="hover:bg-zinc-800/20 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                          <Wifi className="w-5 h-5" />
+                        <div className={`p-2 rounded-lg ${ap.mode === 'infrastructure' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                          {ap.mode === 'infrastructure' ? <Server className="w-5 h-5" /> : <Wifi className="w-5 h-5" />}
                         </div>
                         <div>
                           <p className="text-white font-bold">{ap.name}</p>
-                          <p className="text-xs text-zinc-500 font-mono mt-0.5">{ap.ip_address || 'No IP Asset'}</p>
+                          <p className="text-xs text-zinc-500 font-mono mt-0.5">{ap.ip_address || (ap.mode === 'infrastructure' ? 'Core Node' : 'No dynamic IP')}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="flex items-center gap-2 text-zinc-300">
-                        <Server className="w-4 h-4 text-indigo-400" />
+                        <Monitor className="w-4 h-4 text-indigo-400" />
                         {ap.mikrotik_name || 'Unknown'}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                       <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 w-fit">
-                          <Tag className="w-3 h-3" />
-                          {ap.group_label || 'Unassigned'}
+                       <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                         ap.mode === 'infrastructure' 
+                           ? 'bg-violet-500/10 border-violet-500/20 text-violet-400' 
+                           : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                       }`}>
+                          {ap.mode === 'infrastructure' ? 'BACKBONE' : 'ACCESS POINT'}
                        </span>
                     </td>
                     <td className="px-6 py-4">
-                       {ap.lat && ap.lng ? (
-                         <div className="flex flex-col text-xs font-mono text-zinc-400">
-                           <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-rose-400"/> {ap.lat}</span>
-                           <span>{ap.lng}</span>
-                         </div>
-                       ) : (
-                         <span className="text-xs text-zinc-600 italic">No Coordinates</span>
-                       )}
+                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                         isOnline ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                       }`}>
+                         <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                         {isOnline ? 'ONLINE' : 'OFFLINE'}
+                       </span>
                     </td>
                     <td className="px-6 py-4 text-right space-x-2">
                        <button onClick={() => {

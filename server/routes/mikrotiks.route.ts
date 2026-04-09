@@ -39,8 +39,18 @@ mikrotiksRouter.get('/stats', requireAuth, async (req, res) => {
 
 mikrotiksRouter.get('/', requireAuth, async (req, res) => {
   try {
-    const [devices] = await db.query("SELECT id, name, host, user, port, last_seen, status, is_primary, lat, lng FROM mikrotik_devices");
+    const [devices] = await db.query("SELECT id, name, host, user, port, last_seen, status, is_primary, lat, lng, logs_enabled FROM mikrotik_devices");
     res.json(devices);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+mikrotiksRouter.post('/:id/toggle-logs', requireAuth, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    await db.query("UPDATE mikrotik_devices SET logs_enabled = ? WHERE id = ?", [enabled ? 1 : 0, req.params.id]);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

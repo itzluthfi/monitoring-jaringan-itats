@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Search } from 'lucide-react';
+import { Search, Server, Wifi as WifiIcon, Info, Users, Activity } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Building } from '../types';
+import ReactDOMServer from 'react-dom/server';
 
 // Fix typical Leaflet icon issue in React
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -17,6 +18,7 @@ L.Icon.Default.mergeOptions({
 export function MapView() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchMap = () => {
@@ -44,6 +46,28 @@ export function MapView() {
     b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     b.floors.some(f => f.rooms.some(r => r.name.toLowerCase().includes(searchTerm.toLowerCase())))
   );
+
+  // Custom Icon Generator
+  const createCustomIcon = (name: string, isSelected: boolean, color: string) => {
+    return L.divIcon({
+      className: 'custom-div-icon',
+      html: ReactDOMServer.renderToString(
+        <div className="flex items-center gap-2 group">
+          <div className={`p-2 rounded-lg border-2 shadow-lg transition-all duration-300 ${isSelected ? 'scale-125 bg-white border-indigo-500 text-indigo-500' : 'bg-zinc-900 border-zinc-700 text-white'}`}
+               style={{ borderColor: isSelected ? undefined : color }}>
+            {isSelected ? <WifiIcon size={20} /> : <Server size={20} />}
+          </div>
+          {!isSelected && (
+            <div className="bg-zinc-900/90 backdrop-blur-sm border border-zinc-700 px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+               <span className="text-[10px] font-black text-white uppercase tracking-tighter">{name}</span>
+            </div>
+          )}
+        </div>
+      ),
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+    });
+  };
 
   return (
     <div className="flex h-[calc(100vh-64px)] overflow-hidden animate-in fade-in duration-500">
@@ -119,37 +143,62 @@ export function MapView() {
              const color = getHeatColor(bCurrent, bCap);
 
              return (
-               <CircleMarker
+               <Marker 
                   key={building.id}
-                  center={[building.lat, building.lng]}
-                  radius={20}
-                  pathOptions={{
-                    fillColor: color,
-                    fillOpacity: 0.4,
-                    color: color,
-                    weight: 2
+                  position={[building.lat, building.lng]}
+                  icon={createCustomIcon(building.name, selectedId === building.id, color)}
+                  eventHandlers={{
+                    click: () => setSelectedId(building.id),
+                    popupclose: () => setSelectedId(null)
                   }}
                >
                  <Popup className="custom-popup">
-                   <div className="font-sans text-sm min-w-[200px]">
-                     <div className="flex items-center gap-2 border-b pb-2 mb-3">
-                       <div className={`w-2 h-2 rounded-full ${building.hasWifi !== false ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                       <h3 className="font-bold text-gray-900 text-base">{building.name}</h3>
+                   <div className="font-sans text-sm min-w-[240px] bg-white rounded-lg p-1">
+                     <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-3">
+                        <div className="flex items-center gap-2">
+                           <div className={`w-2.5 h-2.5 rounded-full ${building.hasWifi !== false ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]'}`} />
+                           <h3 className="font-black text-gray-900 text-sm uppercase tracking-tight">{building.name}</h3>
+                        </div>
+                        <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-2 py-0.5 rounded">ID: {building.id.split('-').pop()}</span>
                      </div>
-                     <div className="flex justify-between mb-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                       <span>Total Clients</span>
-                       <span className="text-gray-900">{bCurrent} / {bCap}</span>
+
+                     <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                           <div className="flex items-center gap-1.5 text-gray-400 mb-1">
+                              <Users size={12} />
+                              <span className="text-[10px] font-bold uppercase tracking-wider">Clients</span>
+                           </div>
+                           <p className="text-lg font-black text-gray-900 leading-none">{bCurrent} <span className="text-[10px] text-gray-400 font-medium">/ {bCap || 250}</span></p>
+                        </div>
+                        <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                           <div className="flex items-center gap-1.5 text-gray-400 mb-1">
+                              <Activity size={12} />
+                              <span className="text-[10px] font-bold uppercase tracking-wider">Status</span>
+                           </div>
+                           <p className={`text-xs font-black uppercase tracking-tight ${building.hasWifi !== false ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {building.hasWifi !== false ? 'Operational' : 'No Signal'}
+                           </p>
+                        </div>
                      </div>
                      
-                     <div className="space-y-3 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                     <div className="space-y-2 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
                        {building.floors.map((floor, idx) => (
-                         <div key={idx}>
-                           <span className="text-xs font-bold text-indigo-600 mb-1 block">{floor.level}</span>
+                         <div key={idx} className="mb-2">
+                           <div className="flex items-center gap-2 mb-1.5">
+                              <div className="h-px flex-1 bg-gray-100" />
+                              <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-2">{floor.level || `Floor ${idx+1}`}</span>
+                              <div className="h-px flex-1 bg-gray-100" />
+                           </div>
                            <div className="space-y-1">
                              {floor.rooms.map(room => (
-                               <div key={room.id} className="flex justify-between items-center text-xs bg-gray-50 p-1.5 rounded border border-gray-100">
-                                 <span className="text-gray-700 truncate max-w-[120px]">{room.name}</span>
-                                 <span className="font-mono text-gray-500">{room.current}/{room.cap}</span>
+                               <div key={room.id} className="flex justify-between items-center text-[11px] bg-white p-2 rounded-lg border border-gray-100 hover:border-indigo-100 transition-colors">
+                                 <span className="text-gray-600 font-medium">{room.name}</span>
+                                 <div className="flex items-center gap-2">
+                                    <div className="h-1.5 w-12 bg-gray-100 rounded-full overflow-hidden">
+                                       <div className="h-full bg-indigo-500" style={{ width: `${(room.current/room.cap)*100}%` }} />
+                                    </div>
+                                    <span className="font-bold text-gray-900 min-w-[30px] text-right">{room.current}</span>
+                                 </div>
                                </div>
                              ))}
                            </div>
@@ -158,7 +207,7 @@ export function MapView() {
                      </div>
                    </div>
                  </Popup>
-               </CircleMarker>
+               </Marker>
              );
           })}
         </MapContainer>

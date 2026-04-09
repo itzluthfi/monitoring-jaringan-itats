@@ -184,7 +184,7 @@ dashboardRouter.get("/campus-map", async (req, res) => {
                 id: `ap-${ap.id}`,
                 name: ap.name,
                 cap: 50,
-                current: process.env.MIKROTIK_SIMULATION_MODE === "true" ? Math.floor(Math.random() * 40) : 0, 
+                current: ap.last_client_count || 0, 
                 status: device.status === 'online' ? 'online' : 'offline'
             });
         });
@@ -426,6 +426,47 @@ const getTopologyStatus = () => {
   return status;
 };
 
+const upsertDiscoveredAP = async (routerId: number, ap: any) => {
+  // We need a unique identifier. MAC is best, ID as fallback
+  const mac = ap.mac_address || ap.mac || ap.id || ap.name;
+  if (!mac) return;
+
+  try {
+    // Check if exists
+    const [rows]: any = await db.query("SELECT id FROM mikrotik_aps WHERE mac_address = ? OR (mikrotik_id = ? AND name = ?)", [mac, routerId, ap.name]);
+    
+    const apData = {
+      mikrotik_id: routerId,
+      name: ap.name,
+      mac_address: mac,
+      ip_address: ap.ip || ap.host || null,
+      interface_name: ap.interface || ap.interface_name || null,
+      mode: ap.mode || (ap.isCoreLink ? 'infrastructure' : 'ap'),
+      group_label: ap.group_label || null,
+      status: ap.status || 'online',
+      last_client_count: ap.clients || 0,
+      last_seen: new Date()
+    };
+
+    if (rows.length > 0) {
+      // Update
+      await db.query(
+        "UPDATE mikrotik_aps SET name = ?, ip_address = ?, interface_name = ?, mode = ?, status = 'online', last_client_count = ?, last_seen = NOW() WHERE id = ?",
+        [apData.name, apData.ip_address, apData.interface_name, apData.mode, apData.last_client_count, rows[0].id]
+      );
+    } else {
+      // Insert
+      await db.query(
+        "INSERT INTO mikrotik_aps (mikrotik_id, name, mac_address, ip_address, interface_name, mode, status, last_client_count, last_seen) VALUES (?, ?, ?, ?, ?, ?, 'online', ?, NOW())",
+        [apData.mikrotik_id, apData.name, apData.mac_address, apData.ip_address, apData.interface_name, apData.mode, apData.last_client_count]
+      );
+    }
+    console.log(`[Topology-Sync] Success: synced ${ap.name} (${mac})`);
+  } catch (err) {
+    console.error(`[Topology-Sync] Error syncing AP ${ap.name}:`, err);
+  }
+};
+
 dashboardRouter.get("/topology", async (req, res) => {
   if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
     const status = getTopologyStatus();
@@ -526,16 +567,24 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
       { id: `ap-${routerName}-4`, name: 'AP-Kantin', type: 'ap', status: Math.random() < 0.8 ? 'online' : 'offline', ssid: 'ITATS-Public', band: '2.4GHz', frequency: '2437', channel: '6', clients: Math.floor(Math.random() * 40) + 10, clientDetails: [] },
     ];
     const routerList = simDevices.length > 0 ? simDevices : [{ id: 1, name: 'MikroTik CCR1036', host: '192.168.1.1' }];
-    return res.json({
+    
+    const results = {
       id: 'internet', name: 'Public Internet', type: 'cloud', status: status.internet, lastUpdated: new Date().toISOString(),
-      children: routerList.map((d: any) => ({
-        id: `router-${d.id}`, name: d.name, type: 'router', host: d.host, status: status.router,
-        children: [{
-          id: `switch-core-${d.id}`, name: 'Core Switch', type: 'switch', status: status.switchCore,
-          children: makeAPs(String(d.id))
-        }]
-      }))
-    });
+      children: routerList.map((d: any) => {
+        const aps = makeAPs(String(d.id));
+        // Auto-sync simulated APs to DB so they appear in /admin/aps
+        aps.forEach(ap => upsertDiscoveredAP(d.id, ap));
+        
+        return {
+          id: `router-${d.id}`, name: d.name, type: 'router', host: d.host, status: status.router,
+          children: [{
+            id: `switch-core-${d.id}`, name: 'Core Switch', type: 'switch', status: status.switchCore,
+            children: aps
+          }]
+        };
+      })
+    };
+    return res.json(results);
   }
 
   const deviceFilter = req.query.device as string;
@@ -1061,6 +1110,38 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
           console.error(`[Topology] AP fetch error for ${device.name}:`, err);
         }
       }
+      
+      // ─────────────────────────────────────────────────
+      // 3. Sync discovered nodes to Database & Load Offlines
+      // ─────────────────────────────────────────────────
+      
+      // Mark all "Live" nodes as processed and sync to DB
+      const liveMacs = new Set();
+      for (const ap of accessPoints) {
+        liveMacs.add(ap.mac_address || ap.mac || ap.id || ap.name);
+        await upsertDiscoveredAP(device.id, ap);
+      }
+
+      // Fetch all previously known nodes for this router
+      const [dbAPs]: any = await db.query("SELECT * FROM mikrotik_aps WHERE mikrotik_id = ?", [device.id]);
+      
+      // Merge: Add nodes from DB that were NOT found in the live scan (mark as offline)
+      dbAPs.forEach((dbAp: any) => {
+        if (!liveMacs.has(dbAp.mac_address)) {
+          accessPoints.push({
+            id: `ap-db-${dbAp.id}`,
+            name: dbAp.name,
+            type: 'ap',
+            status: 'offline', // Mark as offline since not in live scan
+            wifiSource: dbAp.mode === 'ap' ? 'WLAN' : 'none',
+            ssid: dbAp.mode === 'infrastructure' ? 'Core Link' : '-',
+            clients: 0,
+            clientDetails: [],
+            mac_address: dbAp.mac_address,
+            lastSeen: dbAp.last_seen
+          });
+        }
+      });
 
       return {
         id: `router-${device.id}`,

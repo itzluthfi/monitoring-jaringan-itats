@@ -39,6 +39,16 @@ export const initializeDB = async () => {
     `);
 
     await db.query(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        key_name VARCHAR(100) UNIQUE,
+        key_value VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
       CREATE TABLE IF NOT EXISTS mikrotik_devices (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255),
@@ -61,12 +71,18 @@ export const initializeDB = async () => {
         id INT AUTO_INCREMENT PRIMARY KEY,
         mikrotik_id INT NOT NULL,
         name VARCHAR(255) NOT NULL,
+        mac_address VARCHAR(50) UNIQUE,
         ip_address VARCHAR(100) NULL,
+        interface_name VARCHAR(100) NULL,
+        mode VARCHAR(50) DEFAULT 'ap',
         group_label VARCHAR(100),
+        status VARCHAR(20) DEFAULT 'online',
         lat FLOAT NULL,
         lng FLOAT NULL,
+        last_seen TIMESTAMP NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_mikrotik (mikrotik_id)
+        INDEX idx_mikrotik (mikrotik_id),
+        INDEX idx_mac (mac_address)
       )
     `);
 
@@ -125,6 +141,45 @@ export const initializeDB = async () => {
       const hash = await bcrypt.hash('admin123', 10);
       await db.query('INSERT INTO admin_users (username, password) VALUES (?, ?)', ['admin', hash]);
       console.log('Default admin seeded (admin/admin123)');
+    }
+
+    // Seed default settings
+    const [settings]: any = await db.query('SELECT * FROM system_settings WHERE key_name = ?', ['log_retention_days']);
+    if (settings.length === 0) {
+      await db.query('INSERT INTO system_settings (key_name, key_value) VALUES (?, ?)', ['log_retention_days', '30']);
+      console.log('Default system settings seeded');
+    }
+
+    // Migration for existing tables: Add columns to mikrotik_aps if missing (Cross-Version Compatible)
+    try {
+      const addColumnIfMissing = async (table: string, column: string, definition: string) => {
+        const [existing]: any = await db.query(
+          "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+          [dbName, table, column]
+        );
+        if (existing.length === 0) {
+          console.log(`[DB-Migration] Adding missing column ${column} to ${table}...`);
+          await db.query(`ALTER TABLE \`${dbName}\`.\`${table}\` ADD COLUMN ${column} ${definition}`);
+        }
+      };
+
+      await addColumnIfMissing('mikrotik_aps', 'mac_address', "VARCHAR(50) UNIQUE AFTER name");
+      await addColumnIfMissing('mikrotik_devices', 'logs_enabled', "TINYINT DEFAULT 1 AFTER port");
+      await addColumnIfMissing('mikrotik_aps', 'interface_name', "VARCHAR(100) NULL AFTER ip_address");
+      await addColumnIfMissing('mikrotik_aps', 'mode', "VARCHAR(50) DEFAULT 'ap' AFTER interface_name");
+      await addColumnIfMissing('mikrotik_aps', 'status', "VARCHAR(20) DEFAULT 'online' AFTER group_label");
+      await addColumnIfMissing('mikrotik_aps', 'last_client_count', "INT DEFAULT 0 AFTER status");
+      await addColumnIfMissing('mikrotik_aps', 'last_seen', "TIMESTAMP NULL AFTER lng");
+      
+      // Index check
+      const [indices]: any = await db.query(
+        "SHOW INDEX FROM \`${dbName}\`.mikrotik_aps WHERE Key_name = 'idx_mac'"
+      ).catch(() => [[]]);
+      if (indices.length === 0) {
+        await db.query(`ALTER TABLE \`${dbName}\`.mikrotik_aps ADD INDEX idx_mac (mac_address)`).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("[DB-Migration] Migration warning:", e);
     }
 
     // Call seedVlanHistory to ensure we have mock data for charts
