@@ -12,10 +12,25 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ onLogout }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState('dark');
+  const [isCollapsed, setIsCollapsed] = useState(localStorage.getItem('sidebar_collapsed') === 'true');
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [lastSeenId, setLastSeenId] = useState<number>(0);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+
+  // Sync theme to document
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  // Sync collapse state to storage
+  const toggleCollapse = () => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    localStorage.setItem('sidebar_collapsed', String(newState));
+  };
 
   let authUser = localStorage.getItem('auth_user');
   if (!authUser || authUser === 'undefined') authUser = 'System Admin';
@@ -90,22 +105,31 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   return (
-    <div className={`flex h-screen overflow-hidden ${theme === 'dark' ? 'bg-zinc-950 text-zinc-300' : 'bg-zinc-100 text-zinc-800'}`}>
+    <div className={`flex h-screen overflow-hidden bg-zinc-950 text-zinc-300 selection:bg-indigo-500/30`}>
       <Sidebar 
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
+        isCollapsed={isCollapsed}
+        setIsCollapsed={setIsCollapsed}
         theme={theme}
         setTheme={setTheme}
-        onLogout={onLogout}
+        onLogout={() => setIsLogoutModalOpen(true)}
         authUser={authUser}
         unreadCount={unreadCount}
       />
 
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300 ease-in-out">
         {/* Header / Topbar */}
         <header className="h-16 flex items-center justify-between px-6 border-b border-zinc-800/50 bg-zinc-950/50 backdrop-blur-xl z-20 sticky top-0">
           <div className="flex items-center gap-4">
             <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 -ml-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800/50">
+              <Menu className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={toggleCollapse} 
+              className="hidden md:flex p-2 -ml-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800/50 transition-colors"
+              title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-xl font-semibold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
@@ -126,7 +150,7 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50">
+                <div className="absolute right-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
                   <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950/50">
                     <h3 className="font-semibold text-white">System Notifications</h3>
                     <button 
@@ -155,20 +179,20 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
                           >
                             {!notif.is_read && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500" />}
                             <div className="flex items-center justify-between mb-1">
-                              <span className={`text-[11px] font-bold uppercase tracking-tight ${notif.type === 'critical' ? 'text-rose-400' : 'text-indigo-400'}`}>
-                                {notif.title}
-                              </span>
+                               <span className={`text-[11px] font-bold uppercase tracking-tight ${notif.type === 'critical' ? 'text-rose-400' : 'text-indigo-400'}`}>
+                                 {notif.title}
+                               </span>
                             </div>
                             <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">{notif.message}</p>
                             <div className="flex items-center justify-between mt-2">
-                              <span className="text-[10px] text-zinc-600 font-mono">
-                                {new Date(notif.created_at).toLocaleTimeString()}
-                              </span>
-                              {notif.action_url && (
-                                <span className="text-[10px] text-indigo-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                                  Lihat Detail &rarr;
-                                </span>
-                              )}
+                               <span className="text-[10px] text-zinc-600 font-mono">
+                                 {new Date(notif.created_at).toLocaleTimeString()}
+                               </span>
+                               {notif.action_url && (
+                                 <span className="text-[10px] text-indigo-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                   Lihat Detail &rarr;
+                                 </span>
+                               )}
                             </div>
                           </div>
                         ))}
@@ -200,6 +224,40 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
           <Outlet />
         </div>
       </main>
+
+      {/* Logout Confirmation Modal */}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="p-8 text-center">
+                 <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500 ring-4 ring-rose-500/5">
+                    <AlertTriangle className="w-8 h-8" />
+                 </div>
+                 <h3 className="text-xl font-bold text-white mb-2">Konfirmasi Logout</h3>
+                 <p className="text-zinc-400 text-sm leading-relaxed">
+                    Apakah Anda yakin ingin keluar dari sesi Administrator? Anda harus login kembali untuk mengakses panel ini.
+                 </p>
+              </div>
+              <div className="p-4 bg-zinc-950/50 border-t border-zinc-800 flex flex-col sm:flex-row gap-3">
+                 <button 
+                    onClick={() => setIsLogoutModalOpen(false)}
+                    className="flex-1 px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl font-bold transition-all"
+                 >
+                    Batal
+                 </button>
+                 <button 
+                    onClick={() => {
+                       setIsLogoutModalOpen(false);
+                       onLogout();
+                    }}
+                    className="flex-1 px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-rose-600/20"
+                 >
+                    Ya, Logout
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }

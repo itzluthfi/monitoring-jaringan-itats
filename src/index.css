@@ -6,24 +6,39 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-:root[data-theme='light'] {
-  /* Invert main structural colors */
-  --color-zinc-950: #f8fafc;
-  --color-zinc-900: #ffffff;
-  --color-zinc-800: #f1f5f9;
-  --color-zinc-700: #e2e8f0;
-  --color-zinc-600: #64748b;
-  --color-zinc-500: #94a3b8;
-  --color-zinc-400: #cbd5e1;
-  --color-zinc-300: #e2e8f0;
-  --color-zinc-200: #f1f5f9;
-  --color-zinc-100: #f8fafc;
+:root {
+  --bg-app: #09090b; /* zinc-950 */
+  --bg-surface: #0a0a0a; /* black/zinc-950 alternate */
+  --bg-card: #18181b; /* zinc-900 */
+  --border-dim: #27272a; /* zinc-800 */
+  --text-main: #f4f4f5; /* zinc-100 */
+  --text-dim: #71717a; /* zinc-500 */
   
-  /* Invert absolute constants used heavily */
-  --color-black: #ffffff;
-  --color-white: #0a0a0a;
+  /* Map standard tailwind colors to these variables for convenience */
+  --color-zinc-950: var(--bg-app);
+  --color-zinc-900: var(--bg-card);
+  --color-zinc-800: var(--border-dim);
+}
 
-  /* Since text-white turns to black, ensure readability */
+:root[data-theme='light'] {
+  --bg-app: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --border-dim: #e2e8f0;
+  --text-main: #0f172a;
+  --text-dim: #64748b;
+
+  --color-zinc-950: var(--bg-app);
+  --color-zinc-900: var(--bg-card);
+  --color-zinc-800: var(--border-dim);
+  --color-white: #000000;
+  --color-black: #ffffff;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 

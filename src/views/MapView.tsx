@@ -4,7 +4,8 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Search, Server, Wifi as WifiIcon, Info, Users, Activity } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
-import { Building } from '../types';
+import { Loader } from '../components/common/Loader';
+import { MikroTikDevice } from '../types';
 import ReactDOMServer from 'react-dom/server';
 
 // Fix typical Leaflet icon issue in React
@@ -16,15 +17,19 @@ L.Icon.Default.mergeOptions({
 });
 
 export function MapView() {
-  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [buildings, setBuildings] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchMap = () => {
-      authFetch('/api/campus-map').then(r => r.json()).then(data => {
-        if (Array.isArray(data)) setBuildings(data);
-      }).catch(console.error);
+      authFetch('/api/campus-map')
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) setBuildings(data);
+        })
+        .finally(() => setLoading(false));
     };
     fetchMap();
     const interval = setInterval(fetchMap, 30000); // 30s refresh rate for map
@@ -68,6 +73,10 @@ export function MapView() {
       iconAnchor: [20, 20],
     });
   };
+
+  if (loading) {
+    return <div className="flex h-[calc(100vh-64px)] items-center justify-center"><Loader /></div>;
+  }
 
   return (
     <div className="flex h-[calc(100vh-64px)] overflow-hidden animate-in fade-in duration-500">

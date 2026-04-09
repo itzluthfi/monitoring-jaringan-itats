@@ -5,6 +5,7 @@ import {
   CheckCircle, XCircle, AlertCircle
 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { Loader } from '../components/common/Loader';
 
 interface ClientDetail {
   mac: string;
@@ -526,10 +527,7 @@ export function TopologyView() {
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-auto p-6">
           {!topology ? (
-            <div className="flex items-center justify-center h-full text-zinc-500 gap-2">
-              <div className="w-4 h-4 border-2 border-zinc-600 border-t-indigo-500 rounded-full animate-spin" />
-              Mapping infrastructure...
-            </div>
+            <Loader message="Mapping infrastructure topology..." />
           ) : (
             <div className="flex flex-col items-center gap-0 w-max mx-auto">
 

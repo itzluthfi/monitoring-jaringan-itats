@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, Wifi, MapPin, Monitor, Server, Tag } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { Loader } from '../components/common/Loader';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
 
 export function AccessPointsView() {
   const [aps, setAps] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]); // To populate the Mikrotik Dropdown
+  const [loading, setLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAp, setEditingAp] = useState<any>(null);
@@ -30,8 +32,15 @@ export function AccessPointsView() {
   };
 
   useEffect(() => {
-    fetchAps();
-    fetchDevices();
+    Promise.all([
+      authFetch('/api/access-points').then(r => r.json()),
+      authFetch('/api/mikrotiks').then(r => r.json())
+    ]).then(([apsData, devicesData]) => {
+      if (Array.isArray(apsData)) setAps(apsData);
+      if (Array.isArray(devicesData)) setDevices(devicesData);
+    })
+    .catch(console.error)
+    .finally(() => setLoading(false));
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -82,6 +91,14 @@ export function AccessPointsView() {
         }).catch(err => toast.error('Failed to delete'));
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <Loader message="Synchronizing access point database..." />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8 animate-in fade-in duration-500">

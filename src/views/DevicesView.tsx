@@ -2,12 +2,14 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Edit2, Play, AlertTriangle, Monitor, Activity, Radio, Key, Search, ArrowLeft, Server } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { Loader } from '../components/common/Loader';
 import { encryptId, decryptId } from '../lib/encryption';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
 
 export function DevicesView() {
   const [devices, setDevices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -25,7 +27,9 @@ export function DevicesView() {
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setDevices(data);
-      }).catch(console.error);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -108,6 +112,14 @@ export function DevicesView() {
          )}
       </div>
     );
+  }
+
+  if (loading) {
+     return (
+       <div className="flex-1 flex items-center justify-center p-8">
+         <Loader message="Fetching infrastructure status..." />
+       </div>
+     );
   }
 
   return (

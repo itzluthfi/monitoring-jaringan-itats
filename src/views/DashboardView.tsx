@@ -3,6 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { Activity, Users, Router as RouterIcon, Wifi, BrainCircuit } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { MikroTikDevice } from '../types';
+import { Loader } from '../components/common/Loader';
 
 export function DashboardView() {
   const [stats, setStats] = useState({ total: 0, online: 0, offline: 0 });
@@ -12,45 +13,56 @@ export function DashboardView() {
   const [rawanHours, setRawanHours] = useState<any[]>([]);
   const [devices, setDevices] = useState<MikroTikDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    try {
+      const [statsRes, curRes, histRes, aiRes, devRes] = await Promise.all([
+        authFetch('/api/mikrotiks/stats'),
+        authFetch(`/api/current-status?device=${selectedDevice}`),
+        authFetch(`/api/history?device=${selectedDevice}`),
+        authFetch(`/api/prediction?device=${selectedDevice}`),
+        authFetch('/api/mikrotiks')
+      ]);
+
+      if (statsRes.ok) setStats(await statsRes.json());
+      if (curRes.ok) setCurrentOnline((await curRes.json()).count);
+      if (histRes.ok) {
+        const raw = await histRes.json();
+        const fmt = raw.map((d: any) => ({
+          time: new Date(d.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+          clients: parseInt(d.client_count) || 0
+        }));
+        setChartData(fmt);
+      }
+      if (aiRes.ok) {
+        const ai = await aiRes.json();
+        setAiPrediction(ai.prediction || '');
+        setRawanHours(ai.rawanHours || []);
+      }
+      if (devRes.ok) {
+        setDevices(await devRes.json());
+      }
+    } catch (err) {
+      console.error("Dashboard fetch error:", err);
+    } finally {
+      if (loading) setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [statsRes, curRes, histRes, aiRes, devRes] = await Promise.all([
-          authFetch('/api/mikrotiks/stats'),
-          authFetch(`/api/current-status?device=${selectedDevice}`),
-          authFetch(`/api/history?device=${selectedDevice}`),
-          authFetch(`/api/prediction?device=${selectedDevice}`),
-          authFetch('/api/mikrotiks')
-        ]);
-
-        if (statsRes.ok) setStats(await statsRes.json());
-        if (curRes.ok) setCurrentOnline((await curRes.json()).count);
-        if (histRes.ok) {
-          const raw = await histRes.json();
-          const fmt = raw.map((d: any) => ({
-            time: new Date(d.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-            clients: parseInt(d.client_count) || 0
-          }));
-          setChartData(fmt);
-        }
-        if (aiRes.ok) {
-          const ai = await aiRes.json();
-          setAiPrediction(ai.prediction || '');
-          setRawanHours(ai.rawanHours || []);
-        }
-        if (devRes.ok) {
-          setDevices(await devRes.json());
-        }
-      } catch (err) {
-        console.error("Dashboard fetch error:", err);
-      }
-    };
-    
     fetchData();
     const interval = setInterval(fetchData, 15000);
     return () => clearInterval(interval);
   }, [selectedDevice]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <Loader message="Initializing secure administrator portal..." />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-in fade-in duration-500">

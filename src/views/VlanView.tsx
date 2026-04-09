@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Activity, Network, TrendingUp, TrendingDown } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { AreaChart, Area, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Loader } from '../components/common/Loader';
 
 export function VlanView() {
   const [devices, setDevices] = useState<any[]>([]);
@@ -10,6 +11,7 @@ export function VlanView() {
   const [timeRange, setTimeRange] = useState<string>('30d');
   const [vlans, setVlans] = useState<any[]>([]);
   const [vlanTrafficHistory, setVlanTrafficHistory] = useState<Record<string, any[]>>({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     authFetch('/api/mikrotiks')
@@ -31,6 +33,7 @@ export function VlanView() {
         if (!isSubscribed || !Array.isArray(data)) return;
         
         setVlans(data);
+        if (loading) setLoading(false);
         
         setVlanTrafficHistory(prev => {
           const next = { ...prev };
@@ -133,6 +136,14 @@ export function VlanView() {
 
     return matchesDevice && matchesType;
   });
+
+  if (loading) {
+     return (
+       <div className="flex-1 flex items-center justify-center p-8">
+         <Loader message="Synchronizing interface traffic matrix..." />
+       </div>
+     );
+  }
 
   return (
     <div className="p-6 md:p-8 animate-in fade-in duration-500">

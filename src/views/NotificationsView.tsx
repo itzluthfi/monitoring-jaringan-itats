@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, ShieldAlert, AlertTriangle, Info, Check, Trash2 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { Loader } from '../components/common/Loader';
 
 export function NotificationsView() {
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const fetchNotifs = () => {
     authFetch('/api/notifications')
@@ -11,7 +13,8 @@ export function NotificationsView() {
       .then(data => {
         if (Array.isArray(data)) setNotifications(data);
       })
-      .catch(console.error);
+      .catch(console.error)
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -31,6 +34,14 @@ export function NotificationsView() {
   const deleteNotif = (id: number) => {
     authFetch(`/api/notifications/${id}`, { method: 'DELETE' }).then(fetchNotifs);
   };
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <Loader message="Synchronizing critical system alerts..." />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8 animate-in fade-in duration-500">

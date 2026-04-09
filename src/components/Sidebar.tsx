@@ -12,6 +12,8 @@ function cn(...inputs: (string|undefined|null|false)[]) {
 interface SidebarProps {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
   theme: string;
   setTheme: (theme: string) => void;
   onLogout: () => void;
@@ -22,6 +24,8 @@ interface SidebarProps {
 export function Sidebar({ 
   isOpen, 
   setIsOpen, 
+  isCollapsed,
+  setIsCollapsed,
   theme, 
   setTheme, 
   onLogout,
@@ -43,51 +47,65 @@ export function Sidebar({
       {/* Sidebar */}
       <div className={cn(
         "fixed md:static inset-y-0 left-0 z-50",
-        "w-64 bg-zinc-950/90 backdrop-blur-xl border-r border-white/10 flex flex-col transition-transform duration-300 ease-in-out",
+        "bg-zinc-950/90 backdrop-blur-xl border-r border-zinc-800/50 flex flex-col transition-all duration-300 ease-in-out",
+        isCollapsed ? "md:w-20" : "md:w-64",
+        "w-64", // Mobile width
         !isOpen && "-translate-x-full md:translate-x-0"
       )}>
-        <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-800/50">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/admin/dashboard')}>
+        <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-800/50 overflow-hidden">
+          <div className="flex items-center gap-3 cursor-pointer min-w-max" onClick={() => navigate('/admin/dashboard')}>
             <div className="relative">
               <div className="absolute inset-0 bg-indigo-500 blur-[8px] opacity-40"></div>
               <Monitor className="w-6 h-6 text-indigo-400 relative z-10" />
             </div>
-            <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">Nexus</span>
+            {!isCollapsed && (
+              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent animate-in fade-in duration-300">
+                Nexus
+              </span>
+            )}
           </div>
           <button onClick={() => setIsOpen(false)} className="md:hidden text-zinc-400 hover:text-white">
             <Menu className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto w-full">
-          <nav className="p-4 space-y-1">
-            <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 px-3">Main Navigation</div>
+        <div className="flex-1 overflow-y-auto w-full custom-scrollbar py-4">
+          <nav className="px-3 space-y-1">
+            {!isCollapsed && (
+              <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em] mb-4 px-3 animate-in fade-in duration-300">
+                Main Menu
+              </div>
+            )}
             
             {NAVIGATION.map((item) => {
               const Icon = item.icon;
-              // Map navigation IDs to actual paths
               const path = `/admin/${item.id}`;
               
               return (
                 <NavLink
                   key={item.id}
                   to={path}
+                  title={isCollapsed ? item.label : ""}
                   onClick={() => {
                     if (window.innerWidth < 768) setIsOpen(false);
                   }}
                   className={({ isActive }) => cn(
-                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+                    isCollapsed ? "justify-center" : "",
                     isActive 
-                      ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" 
-                      : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 border border-transparent"
+                      ? "bg-indigo-500/10 text-indigo-400 shadow-[inset_0_0_15px_rgba(99,102,241,0.05)] border border-indigo-500/20" 
+                      : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200 border border-transparent"
                   )}
                 >
                   {({ isActive }) => (
                     <>
-                      <Icon className={cn("w-5 h-5 transition-colors", isActive ? "text-indigo-400" : "text-zinc-500")} />
-                      <span className="flex-1 text-left">{item.label}</span>
+                      <Icon className={cn("w-5 h-5 flex-shrink-0 transition-colors", isActive ? "text-indigo-400" : "text-zinc-500")} />
+                      {!isCollapsed && <span className="flex-1 truncate animate-in slide-in-from-left-2 duration-300">{item.label}</span>}
                       {item.id === 'notifications' && Boolean(unreadCount && unreadCount > 0) && (
-                        <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">
+                        <span className={cn(
+                          "bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-lg shadow-rose-500/20",
+                          isCollapsed ? "absolute top-2 right-2 scale-75" : ""
+                        )}>
                           {unreadCount}
                         </span>
                       )}
@@ -100,30 +118,37 @@ export function Sidebar({
         </div>
 
         {/* Bottom Section */}
-        <div className="p-4 border-t border-zinc-800/50 w-full space-y-4">
+        <div className="p-3 border-t border-zinc-800/50 w-full space-y-2">
           {/* Theme Toggle */}
           <button 
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 border border-transparent transition-all"
+            className={cn(
+              "w-full flex items-center px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-500 hover:bg-white/[0.03] hover:text-white transition-all",
+              isCollapsed ? "justify-center" : "gap-3"
+            )}
+            title={isCollapsed ? (theme === 'dark' ? 'Light Mode' : 'Dark Mode') : ""}
           >
-            <div className="flex items-center gap-3">
-              {theme === 'dark' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-              <span>{theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
-            </div>
+            {theme === 'dark' ? <Moon className="w-5 h-5 flex-shrink-0" /> : <Sun className="w-5 h-5 flex-shrink-0" />}
+            {!isCollapsed && <span className="animate-in fade-in duration-300">{theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>}
           </button>
 
           {/* User Profile / Logout */}
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0 text-white font-bold shadow-lg shadow-indigo-500/20">
+          <div className={cn(
+            "flex items-center p-2 rounded-xl bg-zinc-900/50 border border-zinc-800/50",
+            isCollapsed ? "flex-col gap-3 justify-center" : "gap-3"
+          )}>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0 text-white font-black text-xs shadow-lg shadow-indigo-500/20">
               {authUser.charAt(0).toUpperCase()}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-zinc-200 truncate">{authUser}</p>
-              <p className="text-xs text-zinc-500 truncate">System Admin</p>
-            </div>
+            {!isCollapsed && (
+              <div className="flex-1 min-w-0 animate-in fade-in duration-300">
+                <p className="text-[11px] font-bold text-zinc-200 truncate uppercase tracking-wider">{authUser}</p>
+                <p className="text-[10px] text-zinc-500 truncate font-mono">ADMINISTRATOR</p>
+              </div>
+            )}
             <button 
               onClick={onLogout}
-              className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-400/10 rounded-md transition-colors"
+              className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-400/10 rounded-lg transition-all"
               title="Logout"
             >
               <LogOut className="w-4 h-4" />
