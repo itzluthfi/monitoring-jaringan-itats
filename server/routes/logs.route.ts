@@ -170,3 +170,13 @@ logsRouter.post('/manual-cleanup', requireAuth, async (req, res) => {
   }
 });
 
+// Flush ALL logs
+logsRouter.delete('/', requireAuth, async (req, res) => {
+  try {
+    const [result]: any = await db.query("DELETE FROM mikrotik_logs");
+    res.json({ success: true, message: `Flushed all ${result.affectedRows} logs.` });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+

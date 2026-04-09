@@ -143,12 +143,18 @@ export const initializeDB = async () => {
       console.log('Default admin seeded (admin/admin123)');
     }
 
-    // Seed default settings
-    const [settings]: any = await db.query('SELECT * FROM system_settings WHERE key_name = ?', ['log_retention_days']);
-    if (settings.length === 0) {
-      await db.query('INSERT INTO system_settings (key_name, key_value) VALUES (?, ?)', ['log_retention_days', '30']);
-      console.log('Default system settings seeded');
-    }
+    // Granularly seed default settings
+    const seedSetting = async (key: string, value: string) => {
+      const [rows]: any = await db.query('SELECT * FROM system_settings WHERE key_name = ?', [key]);
+      if (rows.length === 0) {
+        await db.query('INSERT INTO system_settings (key_name, key_value) VALUES (?, ?)', [key, value]);
+        console.log(`[DB-Seed] Default setting '${key}' seeded with value: ${value}`);
+      }
+    };
+
+    await seedSetting('log_retention_days', '30');
+    await seedSetting('ai_analysis_enabled', 'true');
+    await seedSetting('notification_polling', '10');
 
     // Migration for existing tables: Add columns to mikrotik_aps if missing (Cross-Version Compatible)
     try {

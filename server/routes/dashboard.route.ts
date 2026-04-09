@@ -322,6 +322,17 @@ dashboardRouter.get("/prediction", async (req, res) => {
     const apiKey = process.env.GEMINI_API_KEY;
     const isPlaceholder = !apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("YOUR_");
 
+    // Check system setting for AI
+    const [[aiSetting]]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = ?", ['ai_analysis_enabled']).catch(() => [[{ key_value: 'true' }]]);
+    const aiEnabled = (aiSetting?.key_value !== 'false');
+
+    if (!aiEnabled) {
+      return res.json({
+        prediction: "AI Analysis is currently disabled via system settings.",
+        rawanHours: []
+      });
+    }
+
     const engineStatus = process.env.AHS_ENGINE_STATUS?.toLowerCase();
     if (engineStatus === 'inactive' || engineStatus === 'nonaktif') {
       return res.json({
