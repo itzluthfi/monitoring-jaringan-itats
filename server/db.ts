@@ -62,6 +62,7 @@ export const initializeDB = async () => {
         last_seen TIMESTAMP NULL,
         lat FLOAT NULL,
         lng FLOAT NULL,
+        level INT DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -135,6 +136,19 @@ export const initializeDB = async () => {
       )
     `);
 
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS device_uptime_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        node_id VARCHAR(50) NOT NULL,
+        node_name VARCHAR(255),
+        status VARCHAR(20) NOT NULL,
+        entity_type VARCHAR(20) DEFAULT 'mikrotik',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_node (node_id, created_at)
+      )
+    `);
+
+
     // Seed default admin
     const [users]: any = await db.query('SELECT * FROM admin_users WHERE username = ?', ['admin']);
     if (users.length === 0) {
@@ -176,6 +190,7 @@ export const initializeDB = async () => {
       await addColumnIfMissing('mikrotik_aps', 'status', "VARCHAR(20) DEFAULT 'online' AFTER group_label");
       await addColumnIfMissing('mikrotik_aps', 'last_client_count', "INT DEFAULT 0 AFTER status");
       await addColumnIfMissing('mikrotik_aps', 'last_seen', "TIMESTAMP NULL AFTER lng");
+      await addColumnIfMissing('mikrotik_devices', 'level', "INT DEFAULT NULL AFTER lng");
       
       // Index check
       const [indices]: any = await db.query(
@@ -187,6 +202,17 @@ export const initializeDB = async () => {
     } catch (e) {
       console.warn("[DB-Migration] Migration warning:", e);
     }
+
+    // MIGRATIONS
+    try {
+      await db.query(`ALTER TABLE mikrotik_logs ADD COLUMN IF NOT EXISTS message TEXT`);
+    } catch (e) {}
+    try {
+      await db.query(`ALTER TABLE notifications ADD COLUMN action_url VARCHAR(255) NULL`);
+    } catch (e) {}
+    try {
+      await db.query(`ALTER TABLE notifications ADD COLUMN entity_type VARCHAR(50) DEFAULT 'mikrotik'`);
+    } catch (e) {}
 
     // Call seedVlanHistory to ensure we have mock data for charts
     if (process.env.MIKROTIK_SIMULATION_MODE === "true") {

@@ -18,7 +18,11 @@ import {
   Hash,
   SortAsc,
   CheckSquare,
-  Square
+  Square,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
@@ -49,7 +53,8 @@ export function LogsView() {
     deviceIds: [] as (number | string)[] 
   });
   const [isCleaning, setIsCleaning] = useState(false);
-  const limit = 50;
+  const [limit, setLimit] = useState(25);
+  const [totalPages, setTotalPages] = useState(0);
 
   const fetchRetention = async () => {
     try {
@@ -124,6 +129,7 @@ export function LogsView() {
       .then(data => {
         setLogs(data.data || []);
         setTotal(data.total || 0);
+        setTotalPages(data.totalPages || 0);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -135,7 +141,7 @@ export function LogsView() {
 
   useEffect(() => {
     fetchLogs();
-  }, [deviceId, topicFilter, page, isGrouped, sortOrder, startDate, endDate]);
+  }, [deviceId, topicFilter, page, limit, isGrouped, sortOrder, startDate, endDate]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -259,7 +265,7 @@ export function LogsView() {
                 ) : logs.map((log, idx) => (
                   <tr key={isGrouped ? `grp-${idx}` : log.id} className="hover:bg-white/[0.02] transition-colors group">
                     <td className="px-6 py-4 text-xs font-mono text-zinc-400">
-                      {isGrouped ? new Date(log.last_seen).toLocaleString() : log.time}
+                      {isGrouped ? new Date(log.last_seen).toLocaleString() : new Date(log.created_at).toLocaleString()}
                     </td>
                     <td className="px-6 py-4">
                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getTopicColor(log.topics)}`}>
@@ -293,24 +299,70 @@ export function LogsView() {
 
         {/* Pagination bar */}
         <div className="px-6 py-4 bg-zinc-900/50 border-t border-zinc-800 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
-          <p className="text-xs text-zinc-500">
-            Showing <span className="text-white font-bold">{logs.length}</span> of <span className="text-white font-bold">{total}</span> persistent logs
-          </p>
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2">
+               <span className="text-xs text-zinc-500 font-medium whitespace-nowrap">Show per page</span>
+               <select 
+                 value={limit}
+                 onChange={(e) => {
+                   setLimit(parseInt(e.target.value));
+                   setPage(1);
+                 }}
+                 className="bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer"
+               >
+                 <option value={10}>10</option>
+                 <option value={25}>25</option>
+                 <option value={50}>50</option>
+                 <option value={100}>100</option>
+                 <option value={250}>250</option>
+               </select>
+             </div>
+             <p className="text-xs text-zinc-500">
+               Showing <span className="text-white font-bold">{logs.length}</span> of <span className="text-white font-bold">{total}</span> persistent logs
+             </p>
+          </div>
+
           <div className="flex items-center gap-2">
             <button 
               disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-              className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-bold text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              onClick={() => setPage(1)}
+              className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+              title="First Page"
             >
-              Previous
+              <ChevronsLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs font-mono text-zinc-500 mx-2">Page {page} of {Math.ceil(total/limit) || 1}</span>
             <button 
-              disabled={page >= Math.ceil(total/limit)}
-              onClick={() => setPage(page + 1)}
-              className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-bold text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
             >
-              Next
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            <div className="flex items-center gap-1 mx-2">
+               <span className="text-xs font-bold text-indigo-400 px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-md">
+                 {page}
+               </span>
+               <span className="text-xs text-zinc-600 font-bold">/</span>
+               <span className="text-xs text-zinc-500 font-bold">
+                 {totalPages || 1}
+               </span>
+            </div>
+
+            <button 
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button 
+              disabled={page >= totalPages}
+              onClick={() => setPage(totalPages)}
+              className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+              title="Last Page"
+            >
+              <ChevronsRight className="w-4 h-4" />
             </button>
           </div>
         </div>

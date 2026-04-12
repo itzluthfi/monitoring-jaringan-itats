@@ -96,7 +96,8 @@ logsRouter.get('/', requireAuth, async (req, res) => {
       data: rows,
       total: total,
       page: Number(page),
-      limit: Number(limit)
+      limit: Number(limit),
+      totalPages: Math.ceil(total / Number(limit))
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });

@@ -23,11 +23,14 @@ dotenv.config();
 process.on('uncaughtException', (err: any) => {
   const msg = err?.message || '';
   const errno = err?.errno || '';
+  const name = err?.name || '';
   if (
     errno === 'UNKNOWNREPLY' || msg.includes('UNKNOWNREPLY') || msg.includes('unknown reply') ||
-    errno === 'SOCKTMOUT' || msg.includes('SOCKTMOUT') || msg.includes('Timed out')
+    errno === 'SOCKTMOUT' || msg.includes('SOCKTMOUT') || msg.includes('Timed out') ||
+    name === 'RosException' || String(err).includes('RosException') ||
+    errno === -4077 || errno === 'ECONNRESET' || errno === 'ETIMEDOUT' || errno === 'ENOTFOUND'
   ) {
-    console.warn(`[MikroTik] Ignoring routeros exception (${errno || 'timeout'}):`, msg);
+    console.warn(`[MikroTik] Ignoring routeros exception (${errno || name || 'timeout'}):`, msg);
     return;
   }
   console.error('[FATAL] Uncaught Exception:', err);
@@ -131,6 +134,11 @@ setInterval(async () => {
             'mikrotik'
           ]
         );
+        
+        await db.query(
+          `INSERT INTO device_uptime_logs (node_id, node_name, status, entity_type) VALUES (?, ?, ?, ?)`,
+          [`router-${device.id}`, device.name, newStatus, 'mikrotik']
+        );
       }
       deviceLastStatus[device.id] = newStatus;
     }
@@ -157,6 +165,13 @@ setInterval(async () => {
             '/admin/aps', // Redirect to AP management
             'ap'
           ]
+        );
+
+        await db.query(`UPDATE mikrotik_aps SET status = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?`, [newStatus, ap.id]);
+
+        await db.query(
+          `INSERT INTO device_uptime_logs (node_id, node_name, status, entity_type) VALUES (?, ?, ?, ?)`,
+          [`ap-${ap.id}`, ap.name, newStatus, 'ap']
         );
       }
       apLastStatus[ap.id] = newStatus;

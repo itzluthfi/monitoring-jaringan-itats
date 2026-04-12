@@ -18,7 +18,7 @@ export const createMikrotikClient = (device: any) => {
 
 mikrotiksRouter.get('/stats', requireAuth, async (req, res) => {
   try {
-    const [[stats]]: any = await db.query(`
+    const [[routerStats]]: any = await db.query(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
@@ -26,11 +26,21 @@ mikrotiksRouter.get('/stats', requireAuth, async (req, res) => {
       FROM mikrotik_devices
     `);
     
-    // cast to numbers for safety since SUM returns strings in some mysql configurations
+    const [[apStats]]: any = await db.query(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
+        SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline
+      FROM mikrotik_aps
+    `);
+    
     res.json({
-      total: Number(stats.total) || 0,
-      online: Number(stats.online) || 0,
-      offline: Number(stats.offline) || 0
+      total: Number(routerStats.total) || 0,
+      online: Number(routerStats.online) || 0,
+      offline: Number(routerStats.offline) || 0,
+      apTotal: Number(apStats.total) || 0,
+      apOnline: Number(apStats.online) || 0,
+      apOffline: Number(apStats.offline) || 0,
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -39,7 +49,7 @@ mikrotiksRouter.get('/stats', requireAuth, async (req, res) => {
 
 mikrotiksRouter.get('/', requireAuth, async (req, res) => {
   try {
-    const [devices] = await db.query("SELECT id, name, host, user, port, last_seen, status, is_primary, lat, lng, logs_enabled FROM mikrotik_devices");
+    const [devices] = await db.query("SELECT id, name, host, user, port, last_seen, status, is_primary, lat, lng, level, logs_enabled FROM mikrotik_devices");
     res.json(devices);
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -80,15 +90,15 @@ mikrotiksRouter.post('/:id/primary', requireAuth, async (req, res) => {
 });
 
 mikrotiksRouter.post('/', requireAuth, async (req, res) => {
-  const { name, host, user, password, port, lat, lng } = req.body;
+  const { name, host, user, password, port, lat, lng, level } = req.body;
   if (!name || !host || !user || !password) {
     return res.status(400).json({ error: "Missing required fields" });
   }
   
   try {
     const [result]: any = await db.query(
-      "INSERT INTO mikrotik_devices (name, host, user, password, port, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [name, host, user, password, port || 8728, lat || null, lng || null]
+      "INSERT INTO mikrotik_devices (name, host, user, password, port, lat, lng, level) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [name, host, user, password, port || 8728, lat || null, lng || null, level || null]
     );
     res.json({ id: result.insertId });
   } catch (err) {
@@ -106,7 +116,7 @@ mikrotiksRouter.delete('/:id', requireAuth, async (req, res) => {
 });
 
 mikrotiksRouter.put('/:id', requireAuth, async (req, res) => {
-  const { name, host, user, password, port, lat, lng } = req.body;
+  const { name, host, user, password, port, lat, lng, level } = req.body;
   if (!name || !host || !user) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -117,13 +127,13 @@ mikrotiksRouter.put('/:id', requireAuth, async (req, res) => {
   try {
     if (password) {
       await db.query(
-        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, password = ?, port = ?, lat = ?, lng = ? WHERE id = ?",
-        [name, host, user, password, port || 8728, latVal, lngVal, req.params.id]
+        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, password = ?, port = ?, lat = ?, lng = ?, level = ? WHERE id = ?",
+        [name, host, user, password, port || 8728, latVal, lngVal, level || null, req.params.id]
       );
     } else {
       await db.query(
-        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, port = ?, lat = ?, lng = ? WHERE id = ?",
-        [name, host, user, port || 8728, latVal, lngVal, req.params.id]
+        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, port = ?, lat = ?, lng = ?, level = ? WHERE id = ?",
+        [name, host, user, port || 8728, latVal, lngVal, level || null, req.params.id]
       );
     }
     res.json({ success: true });
@@ -231,22 +241,23 @@ mikrotiksRouter.get('/:id/interfaces', async (req, res) => {
 
     if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
       return res.json([
-        { '.id': '*5', name: 'bridge - Backbone', type: 'bridge', running: 'true', disabled: 'false', 'tx-byte': '104857600', 'rx-byte': '52428800', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 837, 'rx-packet': 1070, 'fp-tx-byte': 0, 'fp-rx-byte': 9200021, parent: null },
-        { '.id': '*6', name: 'bridge - Client', type: 'bridge', running: 'true', disabled: 'false', 'tx-byte': '0', 'rx-byte': '0', 'actual-mtu': 1500, 'l2mtu': 1598, 'tx-packet': 0, 'rx-packet': 0, 'fp-tx-byte': 0, 'fp-rx-byte': 0, parent: null },
-        { '.id': '*1', name: 'ether1', type: 'ether', running: 'true', disabled: 'false', 'tx-byte': '104857600', 'rx-byte': '52428800', 'actual-mtu': 1500, 'l2mtu': 1598, 'tx-packet': 853, 'rx-packet': 1172, 'fp-tx-byte': 1769700, 'fp-rx-byte': 9400000, parent: null },
-        { '.id': '*3', name: 'vlan - Backbone', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '104857600', 'rx-byte': '52428800', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 837, 'rx-packet': 1070, 'fp-tx-byte': 0, 'fp-rx-byte': 9300000, parent: 'ether1' },
-        { '.id': '*2', name: 'ether2 - Gedung A', type: 'ether', running: 'true', disabled: 'false', 'tx-byte': '2048000', 'rx-byte': '1048000', 'actual-mtu': 1500, 'l2mtu': 1598, 'tx-packet': 957, 'rx-packet': 1021, 'fp-tx-byte': 9200000, 'fp-rx-byte': 1808800, parent: null },
-        { '.id': '*7', name: 'vlan - Lecturer', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '409600', 'rx-byte': '204800', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 954, 'rx-packet': 818, 'fp-tx-byte': 0, 'fp-rx-byte': 1633900, parent: 'ether2 - Gedung A' },
-        { '.id': '*8', name: 'vlan - Public', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '0', 'rx-byte': '0', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 0, 'rx-packet': 0, 'fp-tx-byte': 0, 'fp-rx-byte': 0, parent: 'ether2 - Gedung A' },
-        { '.id': '*9', name: 'vlan - Titik', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '12400', 'rx-byte': '42000', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 3, 'rx-packet': 5, 'fp-tx-byte': 0, 'fp-rx-byte': 4100, parent: 'ether2 - Gedung A' }
+        { '.id': '*5', name: 'bridge - Backbone', type: 'bridge', running: 'true', disabled: 'false', 'tx-byte': '104857600', 'rx-byte': '52428800', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 837, 'rx-packet': 1070, 'fp-tx-byte': 0, 'fp-rx-byte': 9200021, parent: null, 'rx-rate': String(Math.floor(Math.random() * 5000000)), 'tx-rate': String(Math.floor(Math.random() * 2000000)) },
+        { '.id': '*6', name: 'bridge - Client', type: 'bridge', running: 'true', disabled: 'false', 'tx-byte': '0', 'rx-byte': '0', 'actual-mtu': 1500, 'l2mtu': 1598, 'tx-packet': 0, 'rx-packet': 0, 'fp-tx-byte': 0, 'fp-rx-byte': 0, parent: null, 'rx-rate': '0', 'tx-rate': '0' },
+        { '.id': '*1', name: 'ether1', type: 'ether', running: 'true', disabled: 'false', 'tx-byte': '104857600', 'rx-byte': '52428800', 'actual-mtu': 1500, 'l2mtu': 1598, 'tx-packet': 853, 'rx-packet': 1172, 'fp-tx-byte': 1769700, 'fp-rx-byte': 9400000, parent: null, 'rx-rate': String(Math.floor(Math.random() * 5000000)), 'tx-rate': String(Math.floor(Math.random() * 2000000)) },
+        { '.id': '*3', name: 'vlan - Backbone', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '104857600', 'rx-byte': '52428800', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 837, 'rx-packet': 1070, 'fp-tx-byte': 0, 'fp-rx-byte': 9300000, parent: 'ether1', 'rx-rate': String(Math.floor(Math.random() * 2000000)), 'tx-rate': String(Math.floor(Math.random() * 1000000)) },
+        { '.id': '*2', name: 'ether2 - Gedung A', type: 'ether', running: 'true', disabled: 'false', 'tx-byte': '2048000', 'rx-byte': '1048000', 'actual-mtu': 1500, 'l2mtu': 1598, 'tx-packet': 957, 'rx-packet': 1021, 'fp-tx-byte': 9200000, 'fp-rx-byte': 1808800, parent: null, 'rx-rate': String(Math.floor(Math.random() * 1000000)), 'tx-rate': String(Math.floor(Math.random() * 500000)) },
+        { '.id': '*7', name: 'vlan - Lecturer', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '409600', 'rx-byte': '204800', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 954, 'rx-packet': 818, 'fp-tx-byte': 0, 'fp-rx-byte': 1633900, parent: 'ether2 - Gedung A', 'rx-rate': String(Math.floor(Math.random() * 500000)), 'tx-rate': String(Math.floor(Math.random() * 200000)) },
+        { '.id': '*8', name: 'vlan - Public', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '0', 'rx-byte': '0', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 0, 'rx-packet': 0, 'fp-tx-byte': 0, 'fp-rx-byte': 0, parent: 'ether2 - Gedung A', 'rx-rate': '0', 'tx-rate': '0' },
+        { '.id': '*9', name: 'vlan - Titik', type: 'vlan', running: 'true', disabled: 'false', 'tx-byte': '12400', 'rx-byte': '42000', 'actual-mtu': 1500, 'l2mtu': 1594, 'tx-packet': 3, 'rx-packet': 5, 'fp-tx-byte': 0, 'fp-rx-byte': 4100, parent: 'ether2 - Gedung A', 'rx-rate': String(Math.floor(Math.random() * 10000)), 'tx-rate': String(Math.floor(Math.random() * 5000)) }
       ]);
     }
 
     const client = createMikrotikClient(device);
     const api = await client.connect();
-    const [interfaces, vlans] = await Promise.all([
+    const [interfaces, vlans, monitorResults] = await Promise.all([
       (api as any).rosApi.write(["/interface/print", "=stats="]),
-      (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => [])
+      (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => []),
+      (api as any).rosApi.write(["/interface/monitor-traffic", "=interface=all", "=once="]).catch(() => [])
     ]);
     await client.close();
 
@@ -257,10 +268,28 @@ mikrotiksRouter.get('/:id/interfaces', async (req, res) => {
       });
     }
 
-    const mapped = (interfaces || []).map((i: any) => ({
-      ...i,
-      parent: vlanParents[i.name] || null
-    }));
+    // Map monitor results by interface name for quick lookup
+    const monitorMap: Record<string, any> = {};
+    if (Array.isArray(monitorResults)) {
+      monitorResults.forEach((m: any) => {
+        if (m.name) monitorMap[m.name] = m;
+      });
+    }
+
+    const mapped = (interfaces || []).map((i: any) => {
+      // Get rates from monitor-traffic first as it's more accurate for real-time bps
+      const m = monitorMap[i.name] || {};
+      
+      const rxRate = m['rx-bits-per-second'] || i['rx-bits-per-second'] || i['rx-rate'] || i['fp-rx-bits-per-second'] || 0;
+      const txRate = m['tx-bits-per-second'] || i['tx-bits-per-second'] || i['tx-rate'] || i['fp-tx-bits-per-second'] || 0;
+
+      return {
+        ...i,
+        'rx-rate': rxRate,
+        'tx-rate': txRate,
+        parent: vlanParents[i.name] || null
+      };
+    });
 
     res.json(mapped);
   } catch (err) {

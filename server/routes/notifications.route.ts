@@ -6,8 +6,25 @@ export const notificationsRouter = Router();
 
 notificationsRouter.get('/', requireAuth, async (req, res) => {
   try {
-    const [rows] = await db.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100");
-    res.json(rows);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 25;
+    const offset = (page - 1) * limit;
+
+    const [rows]: any = await db.query(
+      "SELECT * FROM notifications ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      [limit, offset]
+    );
+
+    const [[countResult]]: any = await db.query("SELECT COUNT(*) as total FROM notifications");
+    const total = countResult?.total || 0;
+
+    res.json({
+      data: rows,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Edit2, Play, AlertTriangle, Monitor, Activity, Radio, Key, Search, ArrowLeft, Server } from 'lucide-react';
+import { Plus, Trash2, Edit2, Play, AlertTriangle, Monitor, Activity, Radio, Key, Search, ArrowLeft, Server, Eye, EyeOff, Layers } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
 import { encryptId, decryptId } from '../lib/encryption';
@@ -11,12 +11,14 @@ export function DevicesView() {
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<any>(null);
   
-  const [formData, setFormData] = useState({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '' });
+  const [formData, setFormData] = useState({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '' });
+  const [showPassword, setShowPassword] = useState(false);
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, any>>({});
 
   const detailIdHash = searchParams.get('detail');
@@ -62,7 +64,7 @@ export function DevicesView() {
       toast.success(editingDevice ? 'Router updated!' : 'Router added!');
       setIsModalOpen(false);
       setEditingDevice(null);
-      setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '' });
+      setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '' });
       fetchDevices();
     } catch (err: any) {
       toast.error(err.message);
@@ -129,12 +131,29 @@ export function DevicesView() {
           <h2 className="text-3xl font-bold text-white tracking-tight">Infrastructure</h2>
           <p className="text-zinc-400 mt-1">Manage core routers and access tier endpoints.</p>
         </div>
-        <button 
-          onClick={() => { setEditingDevice(null); setIsModalOpen(true); }}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" /> Add Router
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Search input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input
+              type="text"
+              placeholder="Search routers..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="bg-zinc-900 border border-zinc-700 text-white text-sm rounded-xl pl-9 pr-4 py-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none w-52"
+            />
+          </div>
+          <button 
+            onClick={() => { 
+              setEditingDevice(null); 
+              setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '' });
+              setIsModalOpen(true); 
+            }}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Add Router
+          </button>
+        </div>
       </div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
@@ -144,18 +163,21 @@ export function DevicesView() {
               <tr>
                 <th className="px-6 py-4 font-semibold">Router Name</th>
                 <th className="px-6 py-4 font-semibold">IP Address</th>
-                <th className="px-6 py-4 font-semibold">Status / Metrics</th>
+                <th className="px-6 py-4 font-semibold">Router Status</th>
+                <th className="px-6 py-4 font-semibold">SNMP Metrics</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
-              {devices.map((device) => {
+              {devices.filter(d => d.name.toLowerCase().includes(search.toLowerCase()) || d.host.toLowerCase().includes(search.toLowerCase())).map((device) => {
                 const stat = deviceStatuses[device.id];
+                const isRouterOnline = device.status === 'online';
+                const isSnmpConnected = stat?.online === true;
                 return (
                   <tr key={device.id} className="hover:bg-zinc-800/20 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${device.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                        <div className={`p-2 rounded-lg ${isRouterOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
                           <Server className="w-5 h-5" />
                         </div>
                         <div>
@@ -169,39 +191,66 @@ export function DevicesView() {
                         {device.host}
                       </span>
                     </td>
+
+                    {/* COLUMN: Router Online/Offline status (from DB polling) */}
+                    <td className="px-6 py-4">
+                      {isRouterOnline ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Online
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                          Offline
+                        </span>
+                      )}
+                    </td>
+
+                    {/* COLUMN: SNMP Metrics (separate from router status) */}
                     <td className="px-6 py-4">
                       {stat ? (
-                        stat.online ? (
-                          <div className="flex flex-col gap-1.5">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 w-fit">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                              Connected (SNMP)
+                        isSnmpConnected ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                              SNMP Connected
                             </span>
-                            <div className="text-[11px] text-zinc-500 flex items-center gap-3">
+                            <div className="text-[11px] text-zinc-500 flex items-center gap-3 mt-0.5">
                               <span title="RouterOS Version">v{stat.version}</span>
                               <span title="CPU Load">CPU {stat.cpuLoad}%</span>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-1.5">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 w-fit">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                              Offline
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              SNMP Unavailable
                             </span>
-                            {stat.error && <span className="text-[10px] text-rose-500/70 max-w-[200px] truncate" title={stat.error}>{stat.error}</span>}
+                            {stat.error && <span className="text-[10px] text-amber-500/70 max-w-[220px] truncate" title={stat.error}>{stat.error}</span>}
                           </div>
                         )
                       ) : (
-                         <div className="h-5 bg-zinc-800 rounded animate-pulse w-24"></div>
+                        <div className="h-5 bg-zinc-800 rounded animate-pulse w-28" />
                       )}
                     </td>
+
                     <td className="px-6 py-4 text-right space-x-2">
                        <button onClick={() => openDetail(device.id)} className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 hover:border-indigo-500/40 rounded-lg transition-colors" title="Manage Router">
                          <Play className="w-4 h-4" />
                        </button>
                        <button onClick={() => {
                           setEditingDevice(device);
-                          setFormData({ name: device.name, host: device.host, user: device.user, password: '', port: String(device.port), lat: device.lat||'', lng: device.lng||'' });
+                          setFormData({ 
+                            name: device.name, 
+                            host: device.host, 
+                            user: device.user, 
+                            password: '', 
+                            port: String(device.port), 
+                            lat: device.lat||'', 
+                            lng: device.lng||'',
+                            level: device.level !== null ? String(device.level) : ''
+                          });
                           setIsModalOpen(true);
                        }} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
                          <Edit2 className="w-4 h-4" />
@@ -256,8 +305,37 @@ export function DevicesView() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">API Password</label>
-                  <input type="password" placeholder={editingDevice ? '(Leave blank to keep)' : ''} required={!editingDevice} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none" />
+                  <div className="relative">
+                    <input 
+                      type={showPassword ? "text" : "password"} 
+                      placeholder={editingDevice ? '(Leave blank to keep)' : ''} 
+                      required={!editingDevice} 
+                      value={formData.password} 
+                      onChange={e => setFormData({...formData, password: e.target.value})} 
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none pr-10" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-1.5 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-indigo-400" /> Hierarchy Level
+                </label>
+                <input 
+                  type="number" 
+                  value={formData.level} 
+                  onChange={e => setFormData({...formData, level: e.target.value})} 
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none" 
+                  placeholder="e.g. 1 (Top), 2, 3... (Empty = Bottom)" 
+                />
+                <p className="text-[10px] text-zinc-500 mt-1">Digunakan untuk mengurutkan router di Topology. Angka lebih kecil muncul lebih atas.</p>
               </div>
               <div className="grid grid-cols-2 gap-4 pt-2">
                 <div>
@@ -297,6 +375,8 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
   const lastQueueFetchTimeRef = useRef<number>(Date.now());
   const [terminalOutput, setTerminalOutput] = useState<any>(null);
   const [terminalCmd, setTerminalCmd] = useState('');
+  const [isLoadingIface, setIsLoadingIface] = useState(true);
+  const [isLoadingBandwidth, setIsLoadingBandwidth] = useState(true);
 
   const fetchInterfaces = useCallback(() => {
     authFetch(`/api/mikrotiks/${device.id}/interfaces`)
@@ -334,7 +414,9 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
 
         setIfaceRates(newRates);
         setInterfaces(data);
-      }).catch(console.error);
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingIface(false));
   }, [device.id]);
 
   const fetchQueues = useCallback(() => {
@@ -378,7 +460,9 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
 
         setQueueRates(newRates);
         setQueues(data);
-      }).catch(console.error);
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingBandwidth(false));
   }, [device.id]);
 
   useEffect(() => {
@@ -500,19 +584,6 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
              <div className="flex flex-col gap-0 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl">
                {/* Dark Action Bar */}
                <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 bg-zinc-900 border-b border-zinc-800 text-xs">
-                 <button onClick={() => toast('Feature Coming Soon')} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-lg font-medium transition-colors">
-                   <Plus className="w-3 h-3" /> New
-                 </button>
-                 <div className="w-px h-4 bg-zinc-700 mx-0.5" />
-                 <button onClick={() => toast('Select an interface to enable')} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg font-medium transition-colors">
-                   <Play className="w-3 h-3" /> Enable
-                 </button>
-                 <button onClick={() => toast('Select an interface to disable')} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg font-medium transition-colors">
-                   <AlertTriangle className="w-3 h-3" /> Disable
-                 </button>
-                 <button onClick={() => toast('Select an interface to remove')} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg font-medium transition-colors">
-                   <Trash2 className="w-3 h-3" /> Remove
-                 </button>
                  <div className="flex-1" />
                  <div className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5">
                    <Search className="w-3 h-3 text-zinc-500" />
@@ -631,12 +702,16 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
                      })()}
                    </tbody>
                  </table>
-                 {interfaces.length === 0 && (
+                 {isLoadingIface ? (
+                   <div className="py-20 flex justify-center">
+                     <Loader message="Fetching interface data..." />
+                   </div>
+                 ) : interfaces.length === 0 ? (
                    <div className="flex flex-col items-center gap-3 py-16 text-zinc-600">
                      <Radio className="w-10 h-10 opacity-50" />
                      <p className="text-sm">No interfaces loaded. Ensure device is online or simulation mode is active.</p>
                    </div>
-                 )}
+                 ) : null}
                </div>
              </div>
           )}
@@ -675,7 +750,13 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
                        </div>
                     </div>
                   ))}
-                  {queues.length === 0 && <div className="p-8 text-center text-zinc-500">No queues configured on this device.</div>}
+                  {isLoadingBandwidth ? (
+                    <div className="py-20 flex justify-center border-b border-zinc-800/50">
+                      <Loader message="Fetching queues data..." />
+                    </div>
+                  ) : queues.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-500">No queues configured on this device.</div>
+                  ) : null}
                </div>
              </div>
           )}

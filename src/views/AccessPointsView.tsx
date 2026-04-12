@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, Wifi, MapPin, Monitor, Server, Tag } from 'lucide-react';
+import { Plus, Trash2, Edit2, Wifi, MapPin, Monitor, Server, Tag, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
 import Swal from 'sweetalert2';
@@ -7,8 +7,12 @@ import toast from 'react-hot-toast';
 
 export function AccessPointsView() {
   const [aps, setAps] = useState<any[]>([]);
-  const [devices, setDevices] = useState<any[]>([]); // To populate the Mikrotik Dropdown
+  const [devices, setDevices] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAp, setEditingAp] = useState<any>(null);
@@ -16,10 +20,14 @@ export function AccessPointsView() {
   const [formData, setFormData] = useState({ mikrotik_id: '', name: '', group_label: '', lat: '', lng: '', ip_address: '' });
 
   const fetchAps = () => {
-    authFetch('/api/access-points')
+    authFetch(`/api/access-points?page=${page}&limit=${limit}`)
       .then(r => r.json())
       .then(data => {
-        if (Array.isArray(data)) setAps(data);
+        if (data && Array.isArray(data.data)) {
+          setAps(data.data);
+          setTotal(data.total);
+          setTotalPages(data.totalPages);
+        }
       }).catch(console.error);
   };
 
@@ -32,16 +40,21 @@ export function AccessPointsView() {
   };
 
   useEffect(() => {
+    setLoading(true);
     Promise.all([
-      authFetch('/api/access-points').then(r => r.json()),
+      authFetch(`/api/access-points?page=${page}&limit=${limit}`).then(r => r.json()),
       authFetch('/api/mikrotiks').then(r => r.json())
     ]).then(([apsData, devicesData]) => {
-      if (Array.isArray(apsData)) setAps(apsData);
+      if (apsData && Array.isArray(apsData.data)) {
+        setAps(apsData.data);
+        setTotal(apsData.total);
+        setTotalPages(apsData.totalPages);
+      }
       if (Array.isArray(devicesData)) setDevices(devicesData);
     })
     .catch(console.error)
     .finally(() => setLoading(false));
-  }, []);
+  }, [page, limit]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,6 +216,73 @@ export function AccessPointsView() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Bar */}
+        {aps.length > 0 && (
+          <div className="px-6 py-4 bg-zinc-950/20 border-t border-zinc-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+             <div className="flex items-center gap-4">
+               <div className="flex items-center gap-2">
+                 <span className="text-xs text-zinc-500 font-medium whitespace-nowrap">Show per page</span>
+                 <select 
+                   value={limit}
+                   onChange={(e) => {
+                     setLimit(parseInt(e.target.value));
+                     setPage(1);
+                   }}
+                   className="bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer"
+                 >
+                   <option value={10}>10</option>
+                   <option value={25}>25</option>
+                   <option value={50}>50</option>
+                   <option value={100}>100</option>
+                 </select>
+               </div>
+               <p className="text-xs text-zinc-500">
+                 Showing <span className="text-white font-bold">{(page-1)*limit + 1}</span> to <span className="text-white font-bold">{Math.min(page*limit, total)}</span> of <span className="text-white font-bold">{total}</span> Access Points
+               </p>
+             </div>
+
+             <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 hover:text-white transition-all"
+                  title="First Page"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 hover:text-white transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1 mx-2">
+                  <span className="text-xs font-bold text-indigo-400 px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-md">{page}</span>
+                  <span className="text-xs text-zinc-600 font-bold">/</span>
+                  <span className="text-xs text-zinc-500 font-bold">{totalPages}</span>
+                </div>
+
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 hover:text-white transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setPage(totalPages)}
+                  disabled={page >= totalPages}
+                  className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 hover:text-white transition-all"
+                  title="Last Page"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
+             </div>
+          </div>
+        )}
       </div>
 
       {isModalOpen && (

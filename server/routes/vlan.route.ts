@@ -42,7 +42,12 @@ vlanRouter.get('/:id/vlan-traffic', async (req, res) => {
           await client.close();
           const vlanNames = new Set((vlansDetail || []).map((v: any) => v.name));
           return (ifaces || [])
-            .map((v: any) => ({ ...v, name: `${v.name} [${device.name}]` }));
+            .map((v: any) => ({ 
+              ...v, 
+              name: `${v.name} [${device.name}]`,
+              'rx-rate': v['rx-bits-per-second'] || v['rx-rate'] || v['fp-rx-bits-per-second'] || 0,
+              'tx-rate': v['tx-bits-per-second'] || v['tx-rate'] || v['fp-tx-bits-per-second'] || 0
+            }));
         } catch (e) {
           return [];
         }
@@ -70,13 +75,29 @@ vlanRouter.get('/:id/vlan-traffic', async (req, res) => {
 
     const client = createMikrotikClient(device);
     const api = await client.connect();
-    const [ifaces, vlansDetail] = await Promise.all([
+    const [ifaces, vlansDetail, monitorResults] = await Promise.all([
       (api as any).rosApi.write(["/interface/print", "=stats="]).catch(() => []),
       (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => []),
+      (api as any).rosApi.write(["/interface/monitor-traffic", "=interface=all", "=once="]).catch(() => [])
     ]);
     await client.close();
+
+    const monitorMap: Record<string, any> = {};
+    if (Array.isArray(monitorResults)) {
+      monitorResults.forEach((m: any) => {
+        if (m.name) monitorMap[m.name] = m;
+      });
+    }
+
     const vlanNames = new Set((vlansDetail || []).map((v: any) => v.name));
-    const vlans = (ifaces || []);
+    const vlans = (ifaces || []).map((v: any) => {
+      const m = monitorMap[v.name] || {};
+      return {
+        ...v,
+        'rx-rate': m['rx-bits-per-second'] || v['rx-bits-per-second'] || v['rx-rate'] || v['fp-rx-bits-per-second'] || 0,
+        'tx-rate': m['tx-bits-per-second'] || v['tx-bits-per-second'] || v['tx-rate'] || v['fp-tx-bits-per-second'] || 0
+      };
+    });
     res.json(vlans);
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });

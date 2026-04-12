@@ -1,17 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, ShieldAlert, AlertTriangle, Info, Check, Trash2 } from 'lucide-react';
+import { Bell, ShieldAlert, AlertTriangle, Info, Check, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
 
 export function NotificationsView() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   const fetchNotifs = () => {
-    authFetch('/api/notifications')
+    authFetch(`/api/notifications?page=${page}&limit=${limit}`)
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) setNotifications(data);
+        if (data && Array.isArray(data.data)) {
+          setNotifications(data.data);
+          setTotal(data.total);
+          setTotalPages(data.totalPages);
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -19,9 +27,9 @@ export function NotificationsView() {
 
   useEffect(() => {
     fetchNotifs();
-    const int = setInterval(fetchNotifs, 10000);
+    const int = setInterval(fetchNotifs, 15000); // Slower polling for notifications
     return () => clearInterval(int);
-  }, []);
+  }, [page, limit]);
 
   const markRead = (id: number) => {
     authFetch(`/api/notifications/${id}/read`, { method: 'POST' }).then(fetchNotifs);
@@ -143,6 +151,79 @@ export function NotificationsView() {
           </div>
         )}
       </div>
+
+      {/* Pagination Controls - Bottom */}
+      {notifications.length > 0 && (
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-zinc-900/40 p-4 border border-white/5 rounded-2xl">
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2">
+               <span className="text-xs text-zinc-500 font-medium whitespace-nowrap">Show per page</span>
+               <select 
+                 value={limit}
+                 onChange={(e) => {
+                   setLimit(parseInt(e.target.value));
+                   setPage(1); // Reset to first page
+                 }}
+                 className="bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs rounded-lg px-2 py-1 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+               >
+                 <option value={10}>10</option>
+                 <option value={25}>25</option>
+                 <option value={50}>50</option>
+                 <option value={100}>100</option>
+               </select>
+             </div>
+             <p className="text-xs text-zinc-400 font-medium whitespace-nowrap">
+               Showing <span className="text-white font-bold">{(page-1)*limit + 1}</span> to <span className="text-white font-bold">{Math.min(page*limit, total)}</span> of <span className="text-white font-bold">{total}</span> notifications
+             </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+               onClick={() => setPage(1)}
+               disabled={page === 1}
+               className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-white transition-all shadow-sm"
+               title="First Page"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+            <button
+               onClick={() => setPage(p => Math.max(1, p - 1))}
+               disabled={page === 1}
+               className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-white transition-all shadow-sm"
+               title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            <div className="flex items-center gap-1 mx-2">
+               <span className="text-xs font-bold text-indigo-400 px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-md shadow-inner">
+                 {page}
+               </span>
+               <span className="text-xs text-zinc-600 font-bold">/</span>
+               <span className="text-xs text-zinc-500 font-bold">
+                 {totalPages || 1}
+               </span>
+            </div>
+
+            <button
+               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+               disabled={page >= totalPages}
+               className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-white transition-all shadow-sm"
+               title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+               onClick={() => setPage(totalPages)}
+               disabled={page >= totalPages}
+               className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-white transition-all shadow-sm"
+               title="Last Page"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,17 +6,51 @@ export const accessPointsRouter = Router();
 // GET all APs (optionally filtered by mikrotik_id)
 accessPointsRouter.get("/", async (req, res) => {
   try {
-    const { mikrotik_id } = req.query;
+    const { mikrotik_id, status } = req.query;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 25;
+    const offset = (page - 1) * limit;
+
     let query = "SELECT a.*, m.name as mikrotik_name FROM mikrotik_aps a LEFT JOIN mikrotik_devices m ON a.mikrotik_id = m.id";
-    const params: any[] = [];
-    if (mikrotik_id) {
-      query += " WHERE a.mikrotik_id = ?";
-      params.push(mikrotik_id);
-    }
-    query += " ORDER BY m.name, a.group_label, a.name";
+    let countQuery = "SELECT COUNT(*) as total FROM mikrotik_aps a";
     
-    const [rows] = await db.query(query, params);
-    res.json(rows);
+    const params: any[] = [];
+    const countParams: any[] = [];
+    const whereClauses: string[] = [];
+
+    if (mikrotik_id) {
+      whereClauses.push("a.mikrotik_id = ?");
+      params.push(mikrotik_id);
+      countParams.push(mikrotik_id);
+    }
+
+    if (status) {
+      whereClauses.push("a.status = ?");
+      params.push(status);
+      countParams.push(status);
+    }
+
+    if (whereClauses.length > 0) {
+      const wherePart = " WHERE " + whereClauses.join(" AND ");
+      query += wherePart;
+      countQuery += wherePart;
+    }
+
+    query += " ORDER BY m.name, a.group_label, a.name";
+    query += " LIMIT ? OFFSET ?";
+    params.push(limit, offset);
+    
+    const [rows]: any = await db.query(query, params);
+    const [[countResult]]: any = await db.query(countQuery, countParams);
+    const total = countResult?.total || 0;
+
+    res.json({
+      data: rows,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -1,11 +1,12 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Network, Server, Monitor, Router as RouterIcon,
   Wifi, X, Signal, Users, Clock, Radio,
-  CheckCircle, XCircle, AlertCircle
+  CheckCircle, XCircle, AlertCircle, Maximize, Minimize
 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
+import { useLocation } from 'react-router-dom';
 
 interface ClientDetail {
   mac: string;
@@ -42,7 +43,7 @@ interface TopologyNode {
 const getStatusColors = (status: string) => {
   if (status === 'online')   return { border: 'border-indigo-500/40', bg: 'bg-indigo-500/20', text: 'text-indigo-400',  badge: 'bg-emerald-500/20 text-emerald-400', glow: 'shadow-indigo-500/20' };
   if (status === 'disabled') return { border: 'border-amber-500/30',  bg: 'bg-amber-500/20',  text: 'text-amber-400',   badge: 'bg-amber-500/20 text-amber-400',   glow: 'shadow-amber-500/20'  };
-  return                            { border: 'border-rose-500/30',   bg: 'bg-rose-500/20',   text: 'text-rose-400',    badge: 'bg-rose-500/20 text-rose-400',     glow: 'shadow-rose-500/20'   };
+  return                            { border: 'border-red-500',   bg: 'bg-red-500/20',   text: 'text-red-500',    badge: 'bg-red-500 text-white',     glow: 'shadow-red-500/40'   };
 };
 const getWifiSourceCls = (src?: string) => {
   if (src === 'CAPsMAN') return 'bg-violet-500/20 text-violet-300 border border-violet-500/30';
@@ -63,10 +64,10 @@ function APCard({ node, selected, onClick }: { node: TopologyNode; selected: boo
   const Icon = getIcon(node.type);
   return (
     <button
+      id={`node-${node.id}`}
       onClick={onClick}
       className={`flex flex-col items-center p-2.5 rounded-xl border backdrop-blur-xl transition-all duration-200 hover:scale-105 w-[108px]
         ${selected ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-zinc-950' : ''}
-        ${node.status === 'offline' ? 'grayscale opacity-60' : ''}
         ${c.border} bg-zinc-900/90 shadow-md`}
     >
       <div className={`p-1.5 rounded-lg mb-1 ${c.bg}`}>
@@ -112,6 +113,7 @@ function RouterColumn({ router, selectedNode, onSelect }: {
 
       {/* Router node */}
       <button
+        id={`node-${router.id}`}
         onClick={() => onSelect(isSelected ? null : router)}
         className={`flex flex-col items-center p-3 rounded-2xl border backdrop-blur-xl transition-all duration-200 hover:scale-105 w-[190px]
           ${isSelected ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-zinc-950' : ''}
@@ -164,7 +166,7 @@ function RouterColumn({ router, selectedNode, onSelect }: {
       {apNodes.length > 0 && (
         <div className="flex flex-wrap justify-center gap-2 max-w-[700px]">
           {apNodes.map(ap => (
-            <div key={ap.id} className="flex flex-col items-center">
+            <div key={`${router.id}-${ap.id}`} className="flex flex-col items-center">
               <div className="w-px h-3 bg-zinc-700/40" />
               <APCard
                 node={ap}
@@ -195,6 +197,37 @@ function DetailPanel({ node, topology, onClose }: {
   const c = getStatusColors(node.status);
   const Icon = getIcon(node.type);
   const isRouter = node.type === 'router';
+  
+  const [width, setWidth] = useState(384);
+  const [activeTab, setActiveTab] = useState<'details'|'logs'>('details');
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      const fetchId = `${node.type === 'router' ? 'router' : 'ap'}-${node.id}`;
+      authFetch(`/api/topology/logs?id=${fetchId}`)
+        .then(r => r.json())
+        .then(data => setLogs(data)).catch();
+    }
+  }, [activeTab, node.id]);
+
+  const startResizing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    document.body.style.cursor = 'ew-resize';
+    const initX = e.clientX;
+    const initW = width;
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = initX - moveEvent.clientX;
+      setWidth(Math.min(Math.max(300, initW + delta), 800));
+    };
+    const onMouseUp = () => {
+      document.body.style.cursor = 'default';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
 
   const routerData = useMemo(() => {
     if (!isRouter || !topology) return null;
@@ -208,13 +241,22 @@ function DetailPanel({ node, topology, onClose }: {
   }, [node.id, topology, isRouter]);
 
   return (
-    <div className="w-96 bg-zinc-950 border-l border-zinc-800 flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300">
+    <div style={{ width: `${width}px` }} className="bg-zinc-950 border-l border-zinc-800 flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 relative flex-shrink-0">
+      <div onMouseDown={startResizing} className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-indigo-500/50 z-20" />
       <div className="p-4 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
-        <h3 className="font-bold text-white text-sm">Node Details</h3>
-        <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+        <div className="flex items-center gap-4">
+          <h3 className="font-bold text-white text-sm">Node Details</h3>
+          <div className="flex bg-zinc-900 rounded-lg p-1">
+             <button onClick={() => setActiveTab('details')} className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${activeTab==='details'?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300'}`}>Details</button>
+             <button onClick={() => setActiveTab('logs')} className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${activeTab==='logs'?'bg-indigo-600 text-white':'text-zinc-500 hover:text-zinc-300'}`}>Logs</button>
+          </div>
+        </div>
+        <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors p-1"><X className="w-4 h-4" /></button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {activeTab === 'details' ? (
+          <>
         {/* Header card */}
         <div className={`p-4 rounded-xl border ${c.border} bg-zinc-900`}>
           <div className="flex items-center gap-3">
@@ -368,6 +410,32 @@ function DetailPanel({ node, topology, onClose }: {
             <Wifi className="w-8 h-8 mx-auto mb-2 opacity-30" />No clients connected
           </div>
         )}
+          </>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">Up/Down History</p>
+            {logs.length === 0 ? (
+              <div className="text-center text-zinc-500 text-xs py-8">No records available</div>
+            ) : (
+              <div className="space-y-2 relative before:absolute before:inset-0 before:ml-2 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-zinc-800 before:to-transparent">
+                {logs.map((log, idx) => (
+                  <div key={idx} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                    <div className={`flex items-center justify-center w-4 h-4 rounded-full border-2 border-zinc-900 ${log.status === 'online' ? 'bg-emerald-500' : 'bg-red-500'} group-[.is-active]:bg-indigo-500 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm`} />
+                    <div className="w-[calc(100%-2rem)] md:w-[calc(50%-1.5rem)] p-3 rounded-lg border border-zinc-800 bg-zinc-900/50 shadow-md">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-full ${log.status === 'online' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-500'}`}>
+                          {log.status}
+                        </span>
+                        <span className="text-[10px] text-zinc-500 flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{new Date(log.created_at).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="text-xs text-zinc-300">{new Date(log.created_at).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -377,10 +445,17 @@ function DetailPanel({ node, topology, onClose }: {
 const MAX_ROUTERS_PER_ROW = 6;
 
 export function TopologyView() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const highlightApName = searchParams.get('ap');
+  const didAutoScroll = useRef(false);
+
   const [topology, setTopology] = useState<TopologyNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<TopologyNode | null>(null);
   const [activeRouters, setActiveRouters] = useState<Set<string>>(new Set(['all']));
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showOfflineModal, setShowOfflineModal] = useState(false);
 
   useEffect(() => {
     const fetchTopo = () => {
@@ -394,6 +469,27 @@ export function TopologyView() {
     const iv = setInterval(fetchTopo, 30000);
     return () => clearInterval(iv);
   }, []);
+
+  // Auto-highlight + scroll when coming from Dashboard "Find in Topology"
+  useEffect(() => {
+    if (!topology || !highlightApName || didAutoScroll.current) return;
+    const nameToFind = highlightApName.toLowerCase();
+    let found: TopologyNode | null = null;
+    for (const router of (topology.children || [])) {
+      const aps = router.children?.[0]?.children || [];
+      const match = aps.find((ap: TopologyNode) => ap.name.toLowerCase().includes(nameToFind));
+      if (match) { found = match; break; }
+    }
+    if (found) {
+      didAutoScroll.current = true;
+      setSelectedNode(found);
+      setActiveRouters(new Set(['all']));
+      setTimeout(() => {
+        const el = document.getElementById(`node-${found!.id}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }, 300);
+    }
+  }, [topology, highlightApName]);
 
   const allRouters = topology?.children || [];
 
@@ -441,15 +537,35 @@ export function TopologyView() {
     return { totalAP, totalClients, totalRoutersOnline, totalDown, totalRouters: allRouters.length };
   }, [allRouters]);
 
+  const offlineNodes = useMemo(() => {
+    const nodes: TopologyNode[] = [];
+    allRouters.forEach(r => {
+      if (r.status !== 'online') nodes.push(r);
+      r.children?.[0]?.children?.forEach((ap: TopologyNode) => {
+        if (ap.status !== 'online') nodes.push(ap);
+      });
+    });
+    return nodes;
+  }, [allRouters]);
+
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden animate-in fade-in duration-500">
+    <div className={`flex flex-col overflow-hidden animate-in fade-in duration-500 bg-zinc-950 ${isFullscreen ? 'fixed inset-0 z-[100]' : 'h-[calc(100vh-64px)]'}`}>
 
       {/* ── Top Bar ─────────────────────────────────────────────────────────── */}
       <div className="flex-shrink-0 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-xl px-5 py-3 space-y-3">
         {/* Title row */}
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-4 flex-wrap pb-1">
           <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold text-white tracking-tight">Network Topology</h2>
+            <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              Network Topology
+              <button 
+                onClick={() => setIsFullscreen(!isFullscreen)} 
+                className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors"
+                title="Toggle Fullscreen"
+              >
+                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </button>
+            </h2>
             {lastUpdated && <p className="text-[10px] text-zinc-600 mt-0.5">Updated {new Date(lastUpdated).toLocaleTimeString()}</p>}
           </div>
           {/* Stats pills */}
@@ -523,6 +639,21 @@ export function TopologyView() {
         )}
       </div>
 
+      {offlineNodes.length > 0 && (
+        <div className="flex-shrink-0 bg-red-950/40 border-b border-red-900/50 px-5 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-red-400 font-medium">
+            <AlertCircle className="w-4 h-4" />
+            <span>Terdeteksi {offlineNodes.length} node jaringan sedang offline.</span>
+          </div>
+          <button 
+            onClick={() => setShowOfflineModal(true)}
+            className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-1.5 rounded-lg border border-red-500/30 transition-colors font-bold"
+          >
+            Lihat Detail
+          </button>
+        </div>
+      )}
+
       {/* ── Canvas + Sidebar ────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-auto p-6">
@@ -565,7 +696,7 @@ export function TopologyView() {
                     style={{ gap: '34px' }}
                   >
                     {row.map(router => (
-                      <div key={router.id}>
+                      <div key={`row-${rowIdx}-${router.id}`}>
                         <RouterColumn
                           router={router}
                           selectedNode={selectedNode}
@@ -591,6 +722,44 @@ export function TopologyView() {
           <DetailPanel node={selectedNode} topology={topology} onClose={() => setSelectedNode(null)} />
         )}
       </div>
+
+      {showOfflineModal && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <h3 className="font-bold text-white flex items-center gap-2"><AlertCircle className="w-5 h-5 text-red-500" /> Offline Nodes</h3>
+              <button onClick={() => setShowOfflineModal(false)} className="text-zinc-500 hover:text-white p-1 rounded hover:bg-zinc-800 transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-2 max-h-[60vh] overflow-y-auto">
+              {offlineNodes.map((node: any) => (
+                <button 
+                  key={node.id}
+                  onClick={() => {
+                    setSelectedNode(node);
+                    setShowOfflineModal(false);
+                    // Ensure the node is rendered in the DOM by clearing any filters
+                    setActiveRouters(new Set(['all']));
+                    
+                    setTimeout(() => {
+                      document.getElementById(`node-${node.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                    }, 150);
+                  }}
+                  className="w-full text-left p-3 hover:bg-zinc-800/50 rounded-xl mb-1 flex items-center gap-3 transition-colors group border border-transparent hover:border-zinc-700"
+                >
+                  <div className="p-2 bg-red-500/10 rounded-lg group-hover:bg-red-500/20">
+                    {node.type === 'router' ? <Server className="w-5 h-5 text-red-500" /> : <Wifi className="w-5 h-5 text-red-500" />}
+                  </div>
+                  <div>
+                    <p className="font-bold text-zinc-200 text-sm">{node.name}</p>
+                    <p className="text-xs text-zinc-500 capitalize">{node.type} {node.host ? `• ${node.host}` : ''}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
