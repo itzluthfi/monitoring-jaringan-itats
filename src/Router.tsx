@@ -14,7 +14,11 @@ import { SettingsView } from './views/SettingsView';
 import { NotificationsView } from './views/NotificationsView';
 import { AccessPointsView } from './views/AccessPointsView';
 import { LogsView } from './views/LogsView';
+import { SmartCentralView } from './views/SmartCentralView';
+import { ClientReportView } from './views/ClientReportView';
+import { ControllersView } from './views/ControllersView';
 import { Toaster } from 'react-hot-toast';
+
 
 export default function Router() {
   const handleLogout = () => {
@@ -51,10 +55,16 @@ export default function Router() {
           <Route path="logs" element={<LogsView />} />
           <Route path="settings" element={<SettingsView />} />
           <Route path="notifications" element={<NotificationsView />} />
+          <Route path="smart-central" element={<SmartCentralView />} />
+          <Route path="clients" element={<ClientReportView />} />
+          <Route path="controllers" element={<ControllersView />} />
         </Route>
+
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <Toaster position="top-right" />
     </BrowserRouter>
   );
 }
+

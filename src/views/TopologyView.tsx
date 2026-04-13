@@ -35,7 +35,7 @@ interface TopologyNode {
   frequency?: string;
   host?: string;
   isPrimary?: boolean;
-  wifiSource?: 'CAPsMAN' | 'WLAN' | 'none';
+  wifiSource?: 'CAPsMAN' | 'WLAN' | 'Backbone' | 'none';
   children?: TopologyNode[];
 }
 
@@ -48,6 +48,7 @@ const getStatusColors = (status: string) => {
 const getWifiSourceCls = (src?: string) => {
   if (src === 'CAPsMAN') return 'bg-violet-500/20 text-violet-300 border border-violet-500/30';
   if (src === 'WLAN')    return 'bg-cyan-500/20   text-cyan-300   border border-cyan-500/30';
+  if (src === 'Backbone') return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
   return '';
 };
 const getIcon = (type: string) => {
@@ -61,21 +62,26 @@ const getIcon = (type: string) => {
 // ── AP Card ──────────────────────────────────────────────────────────────────
 function APCard({ node, selected, onClick }: { node: TopologyNode; selected: boolean; onClick: () => void }) {
   const c = getStatusColors(node.status);
-  const Icon = getIcon(node.type);
+  const isBackbone = node.wifiSource === 'Backbone';
+  const Icon = isBackbone ? Radio : getIcon(node.type);
+  const themeCls = isBackbone 
+    ? (node.status === 'online' ? 'border-rose-500/50 bg-rose-950/20' : 'border-zinc-700 bg-zinc-900/50')
+    : `${c.border} bg-zinc-900/90`;
+
   return (
     <button
       id={`node-${node.id}`}
       onClick={onClick}
       className={`flex flex-col items-center p-2.5 rounded-xl border backdrop-blur-xl transition-all duration-200 hover:scale-105 w-[108px]
         ${selected ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-zinc-950' : ''}
-        ${c.border} bg-zinc-900/90 shadow-md`}
+        ${themeCls} shadow-md`}
     >
-      <div className={`p-1.5 rounded-lg mb-1 ${c.bg}`}>
-        <Icon className={`w-4 h-4 ${c.text} ${node.status === 'online' ? 'animate-pulse' : ''}`} />
+      <div className={`p-1.5 rounded-lg mb-1 ${isBackbone ? 'bg-rose-500/20' : c.bg}`}>
+        <Icon className={`w-4 h-4 ${isBackbone ? 'text-rose-400' : c.text} ${node.status === 'online' ? 'animate-pulse' : ''}`} />
       </div>
-      <p className="font-bold text-zinc-100 text-[10px] text-center truncate w-full px-0.5 leading-tight">{node.name}</p>
+      <p className={`font-bold text-[10px] text-center truncate w-full px-0.5 leading-tight ${isBackbone ? 'text-rose-200' : 'text-zinc-100'}`}>{node.name}</p>
       {node.ssid && node.ssid !== '-' && (
-        <p className="text-[8px] text-indigo-300 mt-0.5 truncate w-full text-center">{node.ssid}</p>
+        <p className={`text-[8px] mt-0.5 truncate w-full text-center ${isBackbone ? 'text-rose-300/70 italic' : 'text-indigo-300'}`}>{node.ssid}</p>
       )}
       <div className="flex flex-wrap justify-center gap-1 mt-1">
         <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded-full ${c.badge}`}>{node.status}</span>

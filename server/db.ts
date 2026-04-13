@@ -148,8 +148,22 @@ export const initializeDB = async () => {
       )
     `);
 
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS network_controllers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL, -- unifi, omada, snmp
+        host VARCHAR(255) NOT NULL,
+        user VARCHAR(255),
+        password VARCHAR(255),
+        extra_config JSON NULL, -- For site_id, ports, etc.
+        status VARCHAR(50) DEFAULT 'unknown',
+        last_error TEXT NULL,
+        last_sync TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-    // Seed default admin
     const [users]: any = await db.query('SELECT * FROM admin_users WHERE username = ?', ['admin']);
     if (users.length === 0) {
       const hash = await bcrypt.hash('admin123', 10);
@@ -191,6 +205,8 @@ export const initializeDB = async () => {
       await addColumnIfMissing('mikrotik_aps', 'last_client_count', "INT DEFAULT 0 AFTER status");
       await addColumnIfMissing('mikrotik_aps', 'last_seen', "TIMESTAMP NULL AFTER lng");
       await addColumnIfMissing('mikrotik_devices', 'level', "INT DEFAULT NULL AFTER lng");
+      await addColumnIfMissing('mikrotik_devices', 'driver', "VARCHAR(50) DEFAULT 'mikrotik' AFTER level");
+      await addColumnIfMissing('mikrotik_devices', 'snmp_port', "INT DEFAULT 161 AFTER snmp_community");
       
       // Index check
       const [indices]: any = await db.query(

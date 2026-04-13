@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Edit2, Play, AlertTriangle, Monitor, Activity, Radio, Key, Search, ArrowLeft, Server, Eye, EyeOff, Layers } from 'lucide-react';
+import { Plus, Trash2, Edit2, Play, AlertTriangle, Monitor, Activity, Radio, Key, Search, ArrowLeft, Server, Eye, EyeOff, Layers, Download, X } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
 import { encryptId, decryptId } from '../lib/encryption';
@@ -17,7 +17,8 @@ export function DevicesView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<any>(null);
   
-  const [formData, setFormData] = useState({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '' });
+  const [formData, setFormData] = useState({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '', driver: 'mikrotik', snmp_community: 'public', snmp_port: '161' });
+  const [availableDrivers, setAvailableDrivers] = useState<any[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, any>>({});
 
@@ -36,6 +37,10 @@ export function DevicesView() {
 
   useEffect(() => {
     fetchDevices();
+    // Fetch available drivers from adapter registry
+    authFetch('/api/adapters/drivers').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setAvailableDrivers(data);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -64,7 +69,7 @@ export function DevicesView() {
       toast.success(editingDevice ? 'Router updated!' : 'Router added!');
       setIsModalOpen(false);
       setEditingDevice(null);
-      setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '' });
+      setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '', driver: 'mikrotik', snmp_community: 'public', snmp_port: '161' });
       fetchDevices();
     } catch (err: any) {
       toast.error(err.message);
@@ -146,12 +151,12 @@ export function DevicesView() {
           <button 
             onClick={() => { 
               setEditingDevice(null); 
-              setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '' });
+              setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '', driver: 'mikrotik', snmp_community: 'public', snmp_port: '161' });
               setIsModalOpen(true); 
             }}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2"
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20"
           >
-            <Plus className="w-4 h-4" /> Add Router
+              <Plus className="w-4 h-4" /> Add Router
           </button>
         </div>
       </div>
@@ -276,80 +281,144 @@ export function DevicesView() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-zinc-800">
-              <h3 className="text-xl font-bold text-white tracking-tight">
-                {editingDevice ? 'Edit Router Config' : 'Add New Router'}
-              </h3>
-            </div>
-            <form onSubmit={handleSave} className="p-6 space-y-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-zinc-800 bg-zinc-950/50 flex items-center justify-between">
               <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Identifier / Location Name</label>
-                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all" placeholder="e.g. Core Switch Gedung F" />
+                <h3 className="text-xl font-bold text-white tracking-tight">
+                  {editingDevice ? 'Edit Router Config' : 'Add New Router'}
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">Configure device connection and identity settings.</p>
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">IP/Host</label>
-                  <input required type="text" value={formData.host} onChange={e => setFormData({...formData, host: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none" placeholder="192.168.1.1" />
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="p-2 hover:bg-zinc-800 rounded-xl text-zinc-500 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSave} className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Connection Settings */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                    <Key className="w-3.5 h-3.5" /> Connection Settings
+                  </h4>
+                  
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">IP / Hostname</label>
+                      <input required type="text" value={formData.host} onChange={e => setFormData({...formData, host: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="192.168.1.1" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Port</label>
+                      <input required type="text" value={formData.port} onChange={e => setFormData({...formData, port: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="8728" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Admin User</label>
+                    <input required type="text" value={formData.user} onChange={e => setFormData({...formData, user: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="admin" />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Password</label>
+                    <div className="relative">
+                      <input 
+                        type={showPassword ? "text" : "password"} 
+                        placeholder={editingDevice ? '(Leave blank to keep)' : ''} 
+                        required={!editingDevice} 
+                        value={formData.password} 
+                        onChange={e => setFormData({...formData, password: e.target.value})} 
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none pr-10 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Driver Options Grouped */}
+                  <div className="pt-2">
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-2 ml-1">Protocol / Adapter</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['mikrotik', 'snmp'].map((d) => (
+                        <label key={d} className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${formData.driver === d ? 'border-indigo-500/50 bg-indigo-500/10 text-white' : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}>
+                          <input type="radio" name="driver" value={d} checked={formData.driver === d} onChange={() => setFormData({...formData, driver: d})} className="accent-indigo-500" />
+                          <span className="text-xs font-bold uppercase">{d}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {formData.driver === 'snmp' && (
+                      <div className="grid grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-2 duration-200">
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-600 uppercase mb-1 ml-1">Community</label>
+                          <input type="text" value={formData.snmp_community} onChange={e => setFormData({...formData, snmp_community: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="public" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-600 uppercase mb-1 ml-1">UDP Port</label>
+                          <input type="number" value={formData.snmp_port} onChange={e => setFormData({...formData, snmp_port: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="161" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">API Port</label>
-                  <input required type="text" value={formData.port} onChange={e => setFormData({...formData, port: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none" placeholder="8728" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">API User</label>
-                  <input required type="text" value={formData.user} onChange={e => setFormData({...formData, user: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">API Password</label>
-                  <div className="relative">
+
+                {/* Identity & Location */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-2">
+                    <Monitor className="w-3.5 h-3.5" /> Identity & Location
+                  </h4>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Identifier / Name</label>
+                    <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium" placeholder="e.g. Core Switch Gedung F" />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1 flex items-center gap-1.5">
+                      Complexity Level
+                    </label>
                     <input 
-                      type={showPassword ? "text" : "password"} 
-                      placeholder={editingDevice ? '(Leave blank to keep)' : ''} 
-                      required={!editingDevice} 
-                      value={formData.password} 
-                      onChange={e => setFormData({...formData, password: e.target.value})} 
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none pr-10" 
+                      type="number" 
+                      value={formData.level} 
+                      onChange={e => setFormData({...formData, level: e.target.value})} 
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" 
+                      placeholder="1 (Root), 2, 3..." 
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                    <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">Lower value appears higher in topology tree.</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Latitude</label>
+                      <input type="text" value={formData.lat} onChange={e => setFormData({...formData, lat: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono" placeholder="-7.29..." />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Longitude</label>
+                      <input type="text" value={formData.lng} onChange={e => setFormData({...formData, lng: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono" placeholder="112.77..." />
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-4 mt-4">
+                    <p className="text-[10px] text-emerald-400/80 leading-relaxed italic">
+                      Gis coordinates are used to plot the device on the global live map. Standard decimal format recommended.
+                    </p>
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" /> Hierarchy Level
-                </label>
-                <input 
-                  type="number" 
-                  value={formData.level} 
-                  onChange={e => setFormData({...formData, level: e.target.value})} 
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none" 
-                  placeholder="e.g. 1 (Top), 2, 3... (Empty = Bottom)" 
-                />
-                <p className="text-[10px] text-zinc-500 mt-1">Digunakan untuk mengurutkan router di Topology. Angka lebih kecil muncul lebih atas.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-500 mb-1.5">Latitude (Map)</label>
-                  <input type="text" value={formData.lat} onChange={e => setFormData({...formData, lat: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="-7.29..." />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-500 mb-1.5">Longitude (Map)</label>
-                  <input type="text" value={formData.lng} onChange={e => setFormData({...formData, lng: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="112.77..." />
-                </div>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-medium transition-colors">Save Details</button>
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2.5 rounded-xl font-medium transition-colors">Cancel</button>
+
+              <div className="flex gap-4 pt-8 border-t border-zinc-800 mt-8">
+                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95">
+                   {editingDevice ? 'Update Device' : 'Register Device'}
+                </button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-[0.5] bg-zinc-800 hover:bg-zinc-700 text-zinc-400 py-3 rounded-2xl font-bold transition-all active:scale-95">
+                  Cancel
+                </button>
               </div>
             </form>
           </div>
@@ -377,12 +446,45 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
   const [terminalCmd, setTerminalCmd] = useState('');
   const [isLoadingIface, setIsLoadingIface] = useState(true);
   const [isLoadingBandwidth, setIsLoadingBandwidth] = useState(true);
+  // State untuk menampilkan pesan error SNMP yang informatif ke user
+  const [snmpError, setSnmpError] = useState<{ error: string; hint?: string; raw?: string } | null>(null);
 
   const fetchInterfaces = useCallback(() => {
+    setSnmpError(null); // Reset error setiap kali fetch baru dimulai
     authFetch(`/api/mikrotiks/${device.id}/interfaces`)
-      .then(r => r.json())
-      .then((data: any[]) => {
-        if (!Array.isArray(data)) return;
+      .then(async r => {
+        const data = await r.json();
+
+        // ── Handle error dari SNMP adapter (HTTP 502/503) ──
+        if (!r.ok) {
+          console.warn('[fetchInterfaces] Server returned error:', data);
+          setSnmpError({
+            error: data.error || `HTTP ${r.status}: Gagal mengambil data interface.`,
+            hint: data.hint || '',
+            raw: data.raw || '',
+          });
+          setInterfaces([]);
+          return;
+        }
+
+        // ── Handle SNMP warning: koneksi berhasil tapi data kosong ──
+        if (data && data._snmpWarning === true) {
+          console.warn('[fetchInterfaces] SNMP warning:', data._message);
+          setSnmpError({
+            error: data._message || 'SNMP terhubung tapi interface kosong.',
+            hint: data._hint || '',
+          });
+          setInterfaces([]);
+          return;
+        }
+
+        // ── Data normal (array) ──
+        if (!Array.isArray(data)) {
+          console.warn('[fetchInterfaces] Data bukan array:', data);
+          setInterfaces([]);
+          return;
+        }
+
         const now = Date.now();
         const elapsed = Math.max(1, (now - lastFetchTimeRef.current) / 1000); // seconds
         lastFetchTimeRef.current = now;
@@ -415,7 +517,13 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
         setIfaceRates(newRates);
         setInterfaces(data);
       })
-      .catch(console.error)
+      .catch(err => {
+        console.error('[fetchInterfaces] Network error:', err);
+        setSnmpError({
+          error: `Gagal menghubungi server: ${err.message}`,
+          hint: 'Pastikan server backend sedang berjalan.',
+        });
+      })
       .finally(() => setIsLoadingIface(false));
   }, [device.id]);
 
@@ -553,6 +661,34 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
     }
   };
 
+  // ── FIX #8: Export interface data ke CSV ──
+  const exportInterfaceCSV = () => {
+    if (interfaces.length === 0) return;
+    const headers = ['Name', 'Type', 'Status', 'MTU', 'Tx Rate (bps)', 'Rx Rate (bps)', 'Tx Bytes', 'Rx Bytes', 'Tx Packets', 'Rx Packets', 'Parent'];
+    const rows = interfaces.map((i: any) => [
+      i.name,
+      i.type,
+      (i.running === 'true' || i.running === true) ? 'Running' : 'Stopped',
+      i['actual-mtu'] || 1500,
+      ifaceRates[i.name]?.txRate ?? 0,
+      ifaceRates[i.name]?.rxRate ?? 0,
+      i['tx-byte'] || 0,
+      i['rx-byte'] || 0,
+      i['tx-packet'] || 0,
+      i['rx-packet'] || 0,
+      i.parent || '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `interfaces_${device.name}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col min-h-[600px]">
        <div className="p-6 border-b border-zinc-800 bg-zinc-950 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -564,6 +700,14 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
              <h2 className="text-2xl font-bold text-white tracking-tight">{device.name}</h2>
              <div className="flex items-center gap-3 mt-1 text-sm">
                <span className="font-mono text-zinc-400">{device.host}:{device.port}</span>
+               {/* Badge driver aktif */}
+               <span className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wider ${
+                 (device.driver || 'mikrotik') === 'mikrotik'
+                   ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                   : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+               }`}>
+                 {device.driver || 'mikrotik'}
+               </span>
                {status?.online ? (
                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium text-xs">Online ({status.uptime})</span>
                ) : (
@@ -593,6 +737,11 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse inline-block" />
                    Live
                  </div>
+                  {interfaces.length > 0 && (
+                    <button onClick={exportInterfaceCSV} title="Export ke CSV" className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors text-[10px] font-semibold">
+                      <Download className="w-3 h-3" /> CSV
+                    </button>
+                  )}
                </div>
 
                {/* Dark Table */}
@@ -702,11 +851,38 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
                      })()}
                    </tbody>
                  </table>
+                 {/* ── SNMP Error Banner — tampil jika ada error koneksi SNMP ── */}
+                 {snmpError && !isLoadingIface && (
+                   <div className="m-3 p-4 bg-amber-500/5 border border-amber-500/30 rounded-xl flex flex-col gap-2">
+                     <div className="flex items-start gap-3">
+                       <span className="text-amber-400 text-lg flex-shrink-0">⚠️</span>
+                       <div className="flex-1 min-w-0">
+                         <p className="text-sm font-semibold text-amber-300">{snmpError.error}</p>
+                         {snmpError.hint && (
+                           <p className="text-xs text-amber-400/70 mt-1.5 leading-relaxed">{snmpError.hint}</p>
+                         )}
+                         {snmpError.raw && (
+                           <details className="mt-2">
+                             <summary className="text-[10px] text-zinc-500 cursor-pointer hover:text-zinc-400">Detail teknis</summary>
+                             <code className="text-[10px] text-zinc-500 font-mono block mt-1 bg-zinc-950 p-2 rounded">{snmpError.raw}</code>
+                           </details>
+                         )}
+                       </div>
+                     </div>
+                     <div className="flex items-center gap-2 ml-8">
+                       <span className="text-[10px] text-zinc-600">Driver aktif:</span>
+                       <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded">{device.driver || 'mikrotik'}</span>
+                       <span className="text-[10px] text-zinc-600">•</span>
+                       <span className="text-[10px] text-zinc-600">Ganti driver di halaman</span>
+                       <a href="/admin/smart-central" className="text-[10px] text-indigo-400 hover:underline">Smart Central</a>
+                     </div>
+                   </div>
+                 )}
                  {isLoadingIface ? (
                    <div className="py-20 flex justify-center">
                      <Loader message="Fetching interface data..." />
                    </div>
-                 ) : interfaces.length === 0 ? (
+                 ) : interfaces.length === 0 && !snmpError ? (
                    <div className="flex flex-col items-center gap-3 py-16 text-zinc-600">
                      <Radio className="w-10 h-10 opacity-50" />
                      <p className="text-sm">No interfaces loaded. Ensure device is online or simulation mode is active.</p>

@@ -16,8 +16,15 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [lastSeenId, setLastSeenId] = useState<number>(0);
+  const [lastSeenId, setLastSeenId] = useState<number>(-1);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  
+  // Audio for notifications
+  const playNotificationSound = () => {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audio.play().catch(e => console.log('Audio play blocked by browser policy until user interaction.'));
+  };
+
 
   // Sync theme to document
   React.useEffect(() => {
@@ -42,52 +49,66 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
     const fetchNotifications = () => {
       authFetch('/api/notifications')
         .then(res => res.json())
-        .then(data => {
+        .then(response => {
+          // The API returns { data: [...], total: ... }
+          const data = response.data || response;
           if (Array.isArray(data)) {
             setNotifications(data);
             
-            // Check for new critical alerts to pop up
             if (data.length > 0) {
               const latestIdInFetch = Math.max(...data.map(n => n.id));
               
-              if (lastSeenId > 0) {
-                const newNotifs = data.filter((n: Notification) => n.id > lastSeenId && !n.is_read && (n.type === 'critical' || n.type === 'error'));
-                newNotifs.forEach((n: Notification) => {
-                  toast.custom((t) => (
-                    <div className={`${t.visible ? 'animate-in slide-in-from-top-5 fade-in duration-300' : 'animate-out slide-out-to-top-5 fade-out duration-300'} max-w-sm w-full bg-zinc-900 border ${n.type === 'critical' ? 'border-red-500/50' : 'border-amber-500/50'} shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5`}>
-                      <div className="flex-1 w-0 p-4">
-                        <div className="flex items-start">
-                          <div className={`flex-shrink-0 pt-0.5 ${n.type === 'critical' ? 'text-red-400' : 'text-amber-400'}`}>
-                            <AlertTriangle className="h-6 w-6" />
-                          </div>
-                          <div className="ml-3 flex-1">
-                            <p className="text-sm font-bold text-white uppercase tracking-wider">{n.title}</p>
-                            <p className="mt-1 text-sm text-zinc-400 leading-relaxed">{n.message}</p>
-                            <div className="mt-3 flex gap-2">
-                               {n.action_url && (
+              // If lastSeenId is -1, this is the FIRST fetch. 
+              // We just set the baseline without showing alerts for old history.
+              if (lastSeenId === -1) {
+                setLastSeenId(latestIdInFetch);
+                return;
+              }
+
+              // Only show alerts for notifications NEWER than our last known ID
+              if (lastSeenId >= 0 && latestIdInFetch > lastSeenId) {
+                const newNotifs = data.filter((n: Notification) => n.id > lastSeenId);
+                
+                if (newNotifs.length > 0) {
+                  playNotificationSound();
+                  
+                  newNotifs.forEach((n: Notification) => {
+                    const isCritical = n.type === 'critical' || n.type === 'error';
+
+                    toast.custom((t) => (
+                      <div className={`${t.visible ? 'animate-in slide-in-from-top-5 fade-in duration-300' : 'animate-out slide-out-to-top-5 fade-out duration-300'} max-w-sm w-full bg-zinc-900 border ${isCritical ? 'border-red-500/50 shadow-red-500/10' : 'border-indigo-500/50 shadow-indigo-500/10'} shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5`}>
+                        <div className="flex-1 w-0 p-4">
+                          <div className="flex items-start">
+                            <div className={`flex-shrink-0 pt-0.5 ${isCritical ? 'text-red-400' : 'text-indigo-400'}`}>
+                              <Bell className="h-6 w-6" />
+                            </div>
+                            <div className="ml-3 flex-1">
+                              <p className="text-sm font-bold text-white uppercase tracking-wider">{n.title}</p>
+                              <p className="mt-1 text-sm text-zinc-400 leading-relaxed line-clamp-2">{n.message}</p>
+                              <div className="mt-3 flex gap-2">
                                  <button 
                                    onClick={() => {
                                       authFetch(`/api/notifications/${n.id}/read`, { method: 'POST' });
                                       toast.dismiss(t.id);
-                                      window.location.href = n.action_url || '#';
+                                      if (n.action_url) window.location.href = n.action_url;
                                    }}
                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
                                  >
-                                   Investigasi Sekarang
+                                   Lihat Sekarang
                                  </button>
-                               )}
-                               <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-bold rounded-lg transition-colors">
-                                 Abaikan
-                               </button>
+                                 <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-bold rounded-lg transition-colors">
+                                   Abaikan
+                                 </button>
+                              </div>
                             </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ), { duration: 10000, position: 'top-center' });
-                });
+                    ), { duration: 8000, position: 'top-center' });
+                  });
+                }
+                setLastSeenId(latestIdInFetch);
               }
-              setLastSeenId(latestIdInFetch);
             }
           }
         })
@@ -95,8 +116,17 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
     };
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 10000);
-    return () => clearInterval(interval);
+
+    const handleUpdate = () => fetchNotifications();
+    window.addEventListener('notifications-changed', handleUpdate);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('notifications-changed', handleUpdate);
+    };
   }, [authToken, lastSeenId]);
+
+
 
   if (!authToken) {
     return <Navigate to="/login" replace />;
@@ -145,8 +175,11 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-zinc-950 animate-pulse"></span>
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-rose-500 text-white text-[10px] font-black flex items-center justify-center rounded-full border-2 border-zinc-950 px-1 shadow-lg shadow-rose-500/30 animate-in zoom-in-0 duration-300">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
                 )}
+
               </button>
 
               {showNotifications && (

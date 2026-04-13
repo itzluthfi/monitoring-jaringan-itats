@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
-import { Activity, Users, Router as RouterIcon, Wifi, BrainCircuit, Settings2, X, Bell, History, ArrowDown, ArrowUp, Map, Info } from 'lucide-react';
+import { Activity, Users, Router as RouterIcon, Wifi, BrainCircuit, Settings2, X, Bell, History, ArrowDown, ArrowUp, Map, Info, SlidersHorizontal, CheckSquare, Square, Maximize } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { MikroTikDevice } from '../types';
 import { Loader } from '../components/common/Loader';
@@ -38,8 +38,29 @@ export function DashboardView() {
   const [apHistory, setApHistory] = useState<any[]>([]);
   const [bwData, setBwData] = useState<{routerName: string, rx: number, tx: number, vlans: {name: string, rx: number, tx: number}[]}[]>([]);
 
+  // Bandwidth Config State (localStorage-persisted)
+  const [bwConfig, setBwConfig] = useState<{ selectedRouterIds: number[], showVlans: boolean, showEther: boolean, showBridge: boolean }>(() => {
+    try {
+      const saved = localStorage.getItem('bw_config');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { selectedRouterIds: [], showVlans: true, showEther: true, showBridge: false };
+  });
+  const [isBwSettingsOpen, setIsBwSettingsOpen] = useState(false);
+
+  const saveBwConfig = (next: typeof bwConfig) => {
+    setBwConfig(next);
+    localStorage.setItem('bw_config', JSON.stringify(next));
+  };
+
+  // Ref to always have the latest bwConfig in async callbacks
+  const bwConfigRef = useRef(bwConfig);
+  useEffect(() => { bwConfigRef.current = bwConfig; }, [bwConfig]);
+
   // Interactivity State
-  const [activeModal, setActiveModal] = useState<'none' | 'offline_routers' | 'offline_aps' | 'wifi_clients'>('none');
+  const [activeModal, setActiveModal] = useState<'none' | 'offline_routers' | 'offline_aps' | 'wifi_clients' | 'ai_details' | 'density_details'>('none');
+  const [aiFilter, setAiFilter] = useState<string>('all');
+
   const [wifiBreakdown, setWifiBreakdown] = useState<{routerName: string, count: number}[]>([]);
   const [offlineApsData, setOfflineApsData] = useState<any[]>([]);
   const [loadingAps, setLoadingAps] = useState(false);
@@ -53,8 +74,14 @@ export function DashboardView() {
   };
 
   const fetchBandwidth = async (targetDevices: MikroTikDevice[]) => {
+    // Filter devices by selected router IDs (if any specific ones are selected)
+    const cfg = bwConfigRef.current;
+    const filtered = cfg.selectedRouterIds.length > 0 
+      ? targetDevices.filter(d => cfg.selectedRouterIds.includes(d.id))
+      : targetDevices;
+
     try {
-      const promises = targetDevices.map(d => authFetch(`/api/mikrotiks/${d.id}/interfaces`).then(res => res.json()).then(data => ({ router: d, data: Array.isArray(data) ? data : [] })).catch(() => ({ router: d, data: []})));
+      const promises = filtered.map(d => authFetch(`/api/mikrotiks/${d.id}/interfaces`).then(res => res.json()).then(data => ({ router: d, data: Array.isArray(data) ? data : [] })).catch(() => ({ router: d, data: []})));
       const results = await Promise.all(promises);
       
       const newBw = results.map(res => {
@@ -66,13 +93,14 @@ export function DashboardView() {
             const rx = Number(iface['rx-rate'] || 0);
             const tx = Number(iface['tx-rate'] || 0);
             
-            if (iface.type !== 'bridge' && iface.type !== 'vlan') {
-               totalRx += rx;
-               totalTx += tx;
-            }
-            if (iface.type === 'vlan') {
-               vlans.push({ name: iface.name, rx, tx });
-            }
+            const isVlan = iface.type === 'vlan';
+            const isBridge = iface.type === 'bridge';
+            const isEther = !isVlan && !isBridge;
+
+            // Apply type filters
+            if (isEther && cfg.showEther) { totalRx += rx; totalTx += tx; }
+            if (isBridge && cfg.showBridge) { totalRx += rx; totalTx += tx; }
+            if (isVlan && cfg.showVlans) { vlans.push({ name: iface.name, rx, tx }); }
          });
          
          return { routerName: res.router.name, rx: totalRx, tx: totalTx, vlans };
@@ -116,7 +144,27 @@ export function DashboardView() {
       }
       if (devRes.ok) {
         const devs = await devRes.json();
-        setDevices(devs);
+
+        // ── FIX #10: Auto-notifikasi jika device berubah dari online → offline ──
+        setDevices(prev => {
+          devs.forEach((d: any) => {
+            const wasPrev = prev.find((p: any) => p.id === d.id);
+            if (wasPrev && wasPrev.status === 'online' && d.status === 'offline') {
+              // Device baru saja offline — kirim notifikasi otomatis ke backend
+              authFetch('/api/notifications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'error',
+                  title: `Device Offline: ${d.name}`,
+                  message: `Router ${d.name} (${d.host}) tidak dapat dijangkau.`,
+                }),
+              }).catch(() => {}); // silent fail — notifikasi tidak kritikal
+            }
+          });
+          return devs;
+        });
+
         if (widgetConfig.bandwidth) {
           const targets = selectedDevice === 'all' ? devs : devs.filter((d:any) => d.id.toString() === selectedDevice);
           fetchBandwidth(targets);
@@ -135,11 +183,13 @@ export function DashboardView() {
     }
   };
 
+  // FIX #7: useCallback agar interval cleanup benar dan tidak ada stale closure
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 15000);
+    // Cleanup interval saat komponen unmount atau dependency berubah
     return () => clearInterval(interval);
-  }, [selectedDevice, widgetConfig]);
+  }, [selectedDevice, widgetConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openOfflineAps = async () => {
      setActiveModal('offline_aps');
@@ -276,15 +326,20 @@ export function DashboardView() {
         {/* MIDDLE SECTION (Charts & AI) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {widgetConfig.densityFlow && (
-            <div className={`bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl ${widgetConfig.aiPredictor ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
+            <div className={`bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col h-[450px] ${widgetConfig.aiPredictor ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-white">Campus Density Flow</h3>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  Campus Density Flow
+                  <button onClick={() => setActiveModal('density_details')} className="p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-indigo-400 transition-colors" title="View Full Report">
+                    <Maximize className="w-4 h-4" />
+                  </button>
+                </h3>
                 <div className="flex items-center gap-2 text-xs font-medium bg-zinc-800/50 px-3 py-1.5 rounded-full border border-zinc-700">
                   <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
                   Live Feed
                 </div>
               </div>
-              <div className="h-[300px] w-full">
+              <div className="flex-1 w-full min-h-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
@@ -307,37 +362,44 @@ export function DashboardView() {
             </div>
           )}
 
+
           {widgetConfig.aiPredictor && (
-            <div className={`bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col ${widgetConfig.densityFlow ? 'lg:col-span-1' : 'lg:col-span-3'}`}>
-              <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-                <BrainCircuit className="w-5 h-5 text-purple-400" /> AI Congestion Predictor
-              </h3>
-              <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar min-h-[250px]">
+            <div className={`bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col h-[450px] ${widgetConfig.densityFlow ? 'lg:col-span-1' : 'lg:col-span-3'}`}>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <BrainCircuit className="w-5 h-5 text-purple-400" /> AI Predictor
+                </h3>
+                <button onClick={() => setActiveModal('ai_details')} className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">
+                  See All &rarr;
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar min-h-0">
                 {rawanHours && rawanHours.length > 0 ? (
-                  rawanHours.map((rh: any, idx: number) => (
+                  rawanHours.slice(0, 10).map((rh: any, idx: number) => (
                     <div key={idx} className="flex items-center justify-between p-4 rounded-xl bg-zinc-800/40 border border-zinc-700/50 hover:bg-zinc-800/80 transition-colors">
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-lg bg-zinc-950/50">
                           <span className="text-zinc-300 font-mono text-sm">{rh.hour}</span>
                         </div>
                       </div>
-                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      <div className={`px-3 py-1 rounded-full text-[10px] font-bold ${
                         rh.expectedDensity === 'High' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
                         rh.expectedDensity === 'Low' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                         'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                       }`}>
-                        {rh.expectedDensity} Density
+                        {rh.expectedDensity}
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-zinc-500">
-                    <p className="text-sm">Accumulating data points...</p>
+                    <p className="text-sm text-center px-4">Accumulating data points for next prediction cycle...</p>
                   </div>
                 )}
               </div>
             </div>
           )}
+
         </div>
 
         {/* BOTTOM SECTION (Bandwidth & Logs & Notifications) */}
@@ -346,10 +408,24 @@ export function DashboardView() {
            {/* BANDWIDTH WIDGET */}
            {widgetConfig.bandwidth && (
              <div className="lg:col-span-2 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col min-h-[300px] max-h-[824px]">
-               <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-                 <Activity className="w-5 h-5 text-emerald-400" /> 
-                 Live Bandwidth Usage (Per Interfaces)
-               </h3>
+               <div className="flex items-center justify-between mb-6">
+                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                   <Activity className="w-5 h-5 text-emerald-400" /> 
+                   Live Bandwidth Usage
+                   {bwConfig.selectedRouterIds.length > 0 && (
+                     <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full ml-1">
+                       {bwConfig.selectedRouterIds.length} router{bwConfig.selectedRouterIds.length > 1 ? 's' : ''}
+                     </span>
+                   )}
+                 </h3>
+                 <button
+                   onClick={() => setIsBwSettingsOpen(true)}
+                   className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                   title="Configure Bandwidth View"
+                 >
+                   <SlidersHorizontal className="w-4 h-4" />
+                 </button>
+               </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
                  {bwData.length > 0 ? bwData.map((d, i) => (
                     <div key={i} className="bg-zinc-800/30 border border-zinc-700/50 rounded-xl p-4">
@@ -520,12 +596,82 @@ export function DashboardView() {
                   {activeModal === 'offline_routers' && <><RouterIcon className="w-5 h-5 text-emerald-400" /> Offline Core Routers</>}
                   {activeModal === 'offline_aps' && <><Wifi className="w-5 h-5 text-sky-400" /> Offline Access Points</>}
                   {activeModal === 'wifi_clients' && <><Users className="w-5 h-5 text-indigo-400" /> Client Distribution Breakdown</>}
+                  {activeModal === 'ai_details' && <><BrainCircuit className="w-5 h-5 text-purple-400" /> AI Congestion Prediction List</>}
+                  {activeModal === 'density_details' && <><Activity className="w-5 h-5 text-indigo-400" /> Campus Density History</>}
                 </h3>
                 <button onClick={() => setActiveModal('none')} className="text-zinc-500 hover:text-white bg-zinc-800/50 hover:bg-zinc-700 p-1.5 rounded-lg transition-colors"><X className="w-5 h-5"/></button>
             </div>
+
             
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-zinc-900/50">
-                {/* WIfi Clients */}
+                {/* AI Prediction Details */}
+                {activeModal === 'ai_details' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between bg-zinc-950/50 p-3 rounded-xl border border-zinc-800">
+                      <span className="text-xs text-zinc-500">Filter Density</span>
+                      <div className="flex gap-1.5">
+                        {['all', 'High', 'Medium', 'Low'].map(f => (
+                          <button 
+                            key={f} 
+                            onClick={() => setAiFilter(f)}
+                            className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                              aiFilter === f ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:text-zinc-300'
+                            }`}
+                          >
+                            {f.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                       {rawanHours.filter(rh => aiFilter === 'all' || rh.expectedDensity === aiFilter).map((rh: any, i) => (
+                          <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-zinc-800/30 border border-zinc-700/50">
+                             <span className="text-sm font-mono text-zinc-200">{rh.hour}</span>
+                             <span className={`px-3 py-1 rounded-full text-[10px] font-bold ${
+                                rh.expectedDensity === 'High' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                                rh.expectedDensity === 'Low' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                                'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                             }`}>{rh.expectedDensity} Density</span>
+                          </div>
+                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Density Flow Details */}
+                {activeModal === 'density_details' && (
+                  <div className="space-y-6">
+                    <div className="bg-zinc-950/50 p-6 rounded-2xl border border-zinc-800 h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" vertical={false} />
+                          <XAxis dataKey="time" stroke="#a1a1aa" fontSize={10} />
+                          <YAxis stroke="#a1a1aa" fontSize={10} />
+                          <RechartsTooltip contentStyle={{ backgroundColor: '#000', borderColor: '#333' }} />
+                          <Area type="monotone" dataKey="clients" stroke="#818cf8" fill="#818cf8" fillOpacity={0.1} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                       <div className="p-4 bg-zinc-800/30 border border-zinc-700/50 rounded-xl">
+                          <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Peak Clients</p>
+                          <p className="text-xl font-bold text-white">{Math.max(...chartData.map(d => d.clients), 0)}</p>
+                       </div>
+                       <div className="p-4 bg-zinc-800/30 border border-zinc-700/50 rounded-xl">
+                          <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Average</p>
+                          <p className="text-xl font-bold text-indigo-400">
+                             {chartData.length ? Math.round(chartData.reduce((s, d) => s + d.clients, 0) / chartData.length) : 0}
+                          </p>
+                       </div>
+                       <div className="p-4 bg-zinc-800/30 border border-zinc-700/50 rounded-xl">
+                          <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Time Range</p>
+                          <p className="text-sm font-bold text-zinc-300">{chartData[0]?.time} - {chartData[chartData.length-1]?.time}</p>
+                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* WIfi Clients Breakdown */}
                 {activeModal === 'wifi_clients' && (
                   <div className="space-y-3">
                      {wifiBreakdown.length > 0 ? wifiBreakdown.map((b, i) => (
@@ -580,6 +726,73 @@ export function DashboardView() {
                   </div>
                 )}
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BANDWIDTH CONFIG MODAL */}
+      {isBwSettingsOpen && (
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-zinc-950/80 backdrop-blur-sm animate-in fade-in duration-200 p-4" onClick={() => setIsBwSettingsOpen(false)}>
+          <div className="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/80">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-emerald-400" /> Configure Live Bandwidth
+              </h3>
+              <button onClick={() => setIsBwSettingsOpen(false)} className="text-zinc-500 hover:text-white bg-zinc-800/50 hover:bg-zinc-700 p-1.5 rounded-lg transition-colors"><X className="w-4 h-4"/></button>
+            </div>
+            <div className="p-5 space-y-5">
+              {/* Router Selection */}
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-300 mb-3">Pilih Router yang Ditampilkan</h4>
+                <p className="text-xs text-zinc-500 mb-3">Kosongkan semua untuk menampilkan semua router.</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                  {devices.map(d => {
+                    const selected = bwConfig.selectedRouterIds.includes(d.id);
+                    return (
+                      <button key={d.id} onClick={() => {
+                        const next = selected
+                          ? bwConfig.selectedRouterIds.filter((id: number) => id !== d.id)
+                          : [...bwConfig.selectedRouterIds, d.id];
+                        saveBwConfig({ ...bwConfig, selectedRouterIds: next });
+                      }} className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left ${selected ? 'border-indigo-500/50 bg-indigo-500/10' : 'border-zinc-800 bg-zinc-800/30 hover:border-zinc-700'}`}>
+                        <div className="flex items-center gap-2.5">
+                          <span className={`w-2 h-2 rounded-full ${d.status === 'online' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                          <div>
+                            <p className="text-sm font-semibold text-white">{d.name}</p>
+                            <p className="text-xs text-zinc-500 font-mono">{d.host}</p>
+                          </div>
+                        </div>
+                        {selected ? <CheckSquare className="w-4 h-4 text-indigo-400" /> : <Square className="w-4 h-4 text-zinc-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              
+              {/* Interface Type Filters */}
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-300 mb-3">Filter Tipe Interface</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: 'showEther', label: 'Ethernet', color: 'cyan' },
+                    { key: 'showVlans', label: 'VLAN', color: 'indigo' },
+                    { key: 'showBridge', label: 'Bridge', color: 'amber' },
+                  ].map(({ key, label, color }) => {
+                    const on = (bwConfig as any)[key];
+                    return (
+                      <button key={key} onClick={() => saveBwConfig({ ...bwConfig, [key]: !on })} className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition-all ${on ? `bg-${color}-500/10 border-${color}-500/30 text-${color}-400` : 'bg-zinc-800/30 border-zinc-800 text-zinc-500'}`}>
+                        {on ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-600 bg-zinc-950/50 rounded-xl p-3 border border-zinc-800">
+                ℹ️ Perubahan disimpan otomatis ke localStorage dan akan diaplikasikan pada polling bandwidth berikutnya.
+              </p>
             </div>
           </div>
         </div>

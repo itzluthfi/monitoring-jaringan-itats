@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { db } from '../db';
 import { GoogleGenAI } from '@google/genai';
 import { createMikrotikClient } from './mikrotiks.route';
+import { smartPredict } from '../lib/ai_engine';
+import { getControllerAdapter } from '../adapters/controller_factory';
 
 export const dashboardRouter = Router();
 
@@ -383,15 +385,9 @@ dashboardRouter.get("/prediction", async (req, res) => {
     }
 
     if (isPlaceholder) {
-      console.warn("[AI] Using mock prediction because GEMINI_API_KEY is not configured.");
-      return res.json({
-        prediction: "AI Prediction is currently in simulation mode. Connect your Gemini API Key or AHS Engine to enable real analysis.",
-        rawanHours: [
-          { hour: "10:00 - 12:00", expectedDensity: "High" },
-          { hour: "13:00 - 15:00", expectedDensity: "High" },
-          { hour: "16:00 - 18:00", expectedDensity: "Medium" }
-        ]
-      });
+      console.log('[AI] API key not configured — using local TensorFlow.js AI engine.');
+      const aiResult = await smartPredict(history || []);
+      return res.json(aiResult);
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -632,6 +628,13 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
     // Return rich simulated topology data identically to the base /topology endpoint
     const status = getTopologyStatus();
     const [simDevices]: any = await db.query("SELECT id, name, host FROM mikrotik_devices").catch(() => [[]]);
+    const isBackbone = (n: string, s: string) => {
+      const ln = (n || "").toLowerCase();
+      const ls = (s || "").toLowerCase();
+      return ln.includes("backbone") || ln.includes("link") || ln.includes("transit") || ln.includes("core") ||
+             ls.includes("backbone") || ls.includes("link") || ls.includes("transit") || ls.includes("core");
+    };
+
     const makeAPs = (routerName: string) => [
       { id: `ap-${routerName}-1`, name: 'AP-GedA-101', type: 'ap', status: Math.random() < 0.9 ? 'online' : 'offline', ssid: 'ITATS-Staff', band: '5GHz', frequency: '5200', channel: '40', clients: Math.floor(Math.random() * 15) + 2, clientDetails: [
           { mac: 'AA:BB:CC:01:02:03', rxRate: '54Mbps', txRate: '48Mbps', signal: '-65dBm', uptime: '2h30m' },
@@ -640,7 +643,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
       { id: `ap-${routerName}-2`, name: 'AP-GedB-201', type: 'ap', status: Math.random() < 0.9 ? 'online' : 'offline', ssid: 'ITATS-Student', band: '2.4GHz', frequency: '2462', channel: '11', clients: Math.floor(Math.random() * 30) + 5, clientDetails: [
           { mac: 'BB:CC:DD:01:02:03', rxRate: '12Mbps', txRate: '8Mbps', signal: '-82dBm', uptime: '1h15m' },
       ]},
-      { id: `ap-${routerName}-3`, name: 'AP-Library', type: 'ap', status: 'online', ssid: 'ITATS-Library', band: '5GHz', frequency: '5745', channel: '149', clients: Math.floor(Math.random() * 20) + 1, clientDetails: [] },
+      { id: `ap-${routerName}-3`, name: 'Backbone Link', type: 'ap', status: 'online', ssid: 'Core Link', band: '5GHz', frequency: '5745', channel: '149', wifiSource: 'Backbone', clients: 0, clientDetails: [] },
       { id: `ap-${routerName}-4`, name: 'AP-Kantin', type: 'ap', status: Math.random() < 0.8 ? 'online' : 'offline', ssid: 'ITATS-Public', band: '2.4GHz', frequency: '2437', channel: '6', clients: Math.floor(Math.random() * 40) + 10, clientDetails: [] },
     ];
     const routerList = simDevices.length > 0 ? simDevices : [{ id: 1, name: 'MikroTik CCR1036', host: '192.168.1.1' }];
@@ -718,21 +721,60 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
           }
           console.log(`[Topology] ${device.name}: DHCP leases found: ${Object.keys(dhcpMap).length}`);
 
+          const isBackbone = (n: string, s: string) => {
+            const ln = (n || "").toLowerCase();
+            const ls = (s || "").toLowerCase();
+            return ln.includes("backbone") || ln.includes("link") || ln.includes("transit") || ln.includes("core") ||
+                   ls.includes("backbone") || ls.includes("link") || ls.includes("transit") || ls.includes("core");
+          };
+
           const enrichClient = (c: any) => {
             const mac = (c['mac-address'] || '').toLowerCase();
             const dhcp = dhcpMap[mac] || { ip: '-', hostname: '-', isStatic: false };
+            
+            // ── Experience Calculation ──
+            const signalStr = c['signal-strength'] || c['rx-signal'] || c['signal'] || '';
+            const signalMatch = signalStr.match(/-?\d+/);
+            const signalNum = signalMatch ? parseInt(signalMatch[0]) : -100;
+            
+            let experience = 'Good';
+            if (signalNum >= -60) experience = 'Excellent';
+            else if (signalNum < -80) experience = 'Poor';
+            
+            // ── WiFi Standard Detection ──
+            let standard = c['standard'] || '-';
+            if (standard === '-') {
+               const rateStr = c['tx-rate'] || '';
+               if (rateStr.includes('ax')) standard = 'WiFi 6';
+               else if (rateStr.includes('ac')) standard = 'WiFi 5';
+               else if (rateStr.includes('n')) standard = 'WiFi 4';
+               else if (rateStr.includes('g') || rateStr.includes('a')) standard = 'WiFi 3';
+            } else {
+               // Cleanup standard string (802.11ax -> WiFi 6)
+               if (standard.includes('ax')) standard = 'WiFi 6';
+               else if (standard.includes('ac')) standard = 'WiFi 5';
+               else if (standard.includes('n')) standard = 'WiFi 4';
+            }
+
             return {
               mac: c['mac-address'] || '-',
               ip: dhcp.ip,
               hostname: dhcp.hostname,
               isStatic: dhcp.isStatic,
-              signal: c['signal-strength'] || c['rx-signal'] || c['signal'] || '-',
+              signal: signalStr || '-',
+              signalNum,
+              experience,
+              standard,
               txRate: c['tx-rate'] || c['tx-rate-set'] || '-',
               rxRate: c['rx-rate'] || c['rx-rate-set'] || '-',
+              txRetries: c['tx-retries'] || '-',
+              ccq: c['tx-ccq'] || '-',
               uptime: c['uptime'] || '-',
               interface: c['interface'] || c['cap-interface'] || c['radio-name'] || '-',
+              apName: device.name
             };
           };
+
 
           // ─────────────────────────────────────────────────
           // 2. Multi-endpoint WiFi discovery (all versions)
@@ -816,13 +858,16 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
               const radioKey = ap['radio-name'] || ap.identity || ap.name;
               const apClients = clientsPerCAP[radioKey] || clientsPerCAP[ap.name] || [];
               const isConnected = ap.state === 'running' || ap.connected === 'true' || ap.connected === true;
+              const name = ap.identity || ap.name || radioKey;
+              const ssid = ap['current-ssid'] || ap.ssid || '-';
+              const isBB = isBackbone(name, ssid);
               return {
                 id: `ap-cap-phys-${device.id}-${ap.name || radioKey}`,
-                name: ap.identity || ap.name || radioKey,
-                type: 'ap' as const,
-                wifiSource: 'CAPsMAN',
+                name: name,
+                type: isBB ? 'ap' : 'ap' as const, // Keep as 'ap' but change wifiSource for now
+                wifiSource: isBB ? 'Backbone' : 'CAPsMAN',
                 status: isConnected ? 'online' : 'offline',
-                ssid: ap['current-ssid'] || ap.ssid || '-',
+                ssid: ssid,
                 band: ap['current-band'] || ap.band || '-',
                 channel: ap['current-channel'] || ap.channel || '-',
                 frequency: ap['current-frequency'] || ap.frequency || '-',
@@ -849,13 +894,16 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
               const apClients = clientsPerCAP[cap.name] || [];
               const isRunning = cap.running === 'true' || cap.running === true;
               const isDisabled = cap.disabled === 'true' || cap.disabled === true;
+              const name = cap['current-master-interface'] || cap.name;
+              const ssid = cap['ssid'] || cap['configuration.ssid'] || cap.name;
+              const isBB = isBackbone(name, ssid);
               return {
                 id: `ap-cap-iface-${device.id}-${cap.name}`,
-                name: cap['current-master-interface'] || cap.name,
+                name: name,
                 type: 'ap' as const,
-                wifiSource: 'CAPsMAN',
+                wifiSource: isBB ? 'Backbone' : 'CAPsMAN',
                 status: isDisabled ? 'disabled' : (isRunning ? 'online' : 'offline'),
-                ssid: cap['ssid'] || cap['configuration.ssid'] || cap.name,
+                ssid: ssid,
                 band: cap['band'] || cap['configuration.band'] || '-',
                 channel: cap['channel'] || cap['current-channel'] || '-',
                 frequency: cap['frequency'] || cap['current-frequency'] || '-',
@@ -881,13 +929,16 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
             accessPoints = capRadios.map((radio: any) => {
               const radioName = radio['radio-name'] || radio.name;
               const apClients = clientsPerRadio[radioName] || [];
+              const name = radio.identity || radioName;
+              const ssid = radio['current-ssid'] || radio.ssid || '-';
+              const isBB = isBackbone(name, ssid);
               return {
                 id: `ap-cap-radio-${device.id}-${radioName}`,
-                name: radio.identity || radioName,
+                name: name,
                 type: 'ap' as const,
-                wifiSource: 'CAPsMAN',
+                wifiSource: isBB ? 'Backbone' : 'CAPsMAN',
                 status: radio.running === 'true' ? 'online' : 'offline',
-                ssid: radio['current-ssid'] || radio.ssid || '-',
+                ssid: ssid,
                 band: radio['current-band'] || radio.band || '-',
                 channel: radio['current-channel'] || radio.channel || '-',
                 frequency: radio['current-frequency'] || radio.frequency || '-',
@@ -914,11 +965,12 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
               const apClients = clientsPerAP[wlan.name] || [];
               const isRunning = wlan.running === 'true' || wlan.running === true;
               const isDisabled = wlan.disabled === 'true' || wlan.disabled === true;
+              const isBB = isBackbone(wlan.name, wlan['ssid'] || wlan.name);
               return {
                 id: `ap-wlan-${device.id}-${wlan.name}`,
                 name: wlan.name,
                 type: 'ap' as const,
-                wifiSource: 'WLAN',
+                wifiSource: isBB ? 'Backbone' : 'WLAN',
                 status: isDisabled ? 'disabled' : (isRunning ? 'online' : 'offline'),
                 ssid: wlan['ssid'] || wlan.name,
                 band: wlan['band'] || '-',
@@ -1215,12 +1267,13 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
             );
             console.log(`[Topology-Sync] Detected ${dbAp.name} went OFFLINE. DB updated.`);
           }
+
         
           accessPoints.push({
             id: String(dbAp.id),
             name: dbAp.name,
             type: 'ap',
-            status: 'offline', // Mark as offline since not in live scan
+            status: 'offline',
             wifiSource: dbAp.mode === 'ap' ? 'WLAN' : 'none',
             ssid: dbAp.mode === 'infrastructure' ? 'Core Link' : '-',
             clients: 0,
@@ -1240,16 +1293,10 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
         lastSeen: device.last_seen,
         isPrimary: device.is_primary === 1,
         wifiSource,
-        children: [{
-          id: `switch-${device.id}`,
-          name: 'Core Switch',
-          type: 'switch',
-          status: routerOnline ? 'online' : 'offline',
-          children: accessPoints.map(ap => ({
-            ...ap,
-            status: routerOnline ? ap.status : 'offline'
-          }))
-        }]
+        children: accessPoints.map(ap => ({
+          ...ap,
+          status: routerOnline ? ap.status : 'offline'
+        }))
       };
     }));
 
@@ -1268,3 +1315,202 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
     res.status(500).json({ error: String(e) });
   }
 });
+
+// --- IN-MEMORY CACHE FOR CLIENTS ---
+let clientCache: { data: any, timestamp: number } | null = null;
+const CACHE_TTL = 60 * 1000; // 60 seconds
+
+/**
+ * GLOBAL CLIENT PERFORMANCE ENDPOINT
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Scans all routers for registration tables and returns a global list
+ * of connected clients with performance metrics and diagnostic errors.
+ * USES BATCHED CONCURRENCY & CACHING FOR PERFORMANCE.
+ */
+dashboardRouter.get('/topology/clients/all', async (req, res) => {
+  try {
+    // Return cache if still fresh
+    if (clientCache && (Date.now() - clientCache.timestamp < CACHE_TTL)) {
+      console.log(`[Client-Scan] ⚡ Serving from cache (${Math.round((Date.now() - clientCache.timestamp)/1000)}s old)`);
+      return res.json(clientCache.data);
+    }
+
+    console.log(`[Client-Scan] 🔍 Starting global scan for clients...`);
+    const startGlobal = Date.now();
+
+    const [devices]: any = await db.query("SELECT * FROM mikrotik_devices WHERE status = 'online'");
+    
+    const allClients: any[] = [];
+    const scanErrors: any[] = [];
+
+    // SCAN IN BATCHES of 3 to balance speed and stability
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < devices.length; i += BATCH_SIZE) {
+      const batch = devices.slice(i, i + BATCH_SIZE);
+      
+      await Promise.all(batch.map(async (device: any) => {
+        const start = Date.now();
+        const client = createMikrotikClient({ ...device, timeout: 15 });
+
+
+        try {
+          const api = await client.connect();
+          
+          const safeWrite = (cmd: string[]) => (api as any).rosApi.write(cmd).catch((e: any) => {
+            const msg = e.message || String(e);
+            if (!msg.includes('no such command') && !msg.includes('no such command prefix')) {
+              console.warn(`[Client-Scan] ⚠️  ${device.name} command failed:`, msg);
+            }
+            return [];
+          });
+
+          // Fetch tables
+          const [capReg, wlanReg, wifiReg, leases] = await Promise.all([
+            safeWrite(["/caps-man/registration-table/print"]),
+            safeWrite(["/interface/wireless/registration-table/print"]),
+            safeWrite(["/interface/wifi/registration-table/print"]),
+            safeWrite(["/ip/dhcp-server/lease/print"]),
+          ]);
+
+          const dhcpMap: Record<string, any> = {};
+          if (Array.isArray(leases)) {
+             leases.forEach((l: any) => {
+               const m = (l['mac-address'] || '').toLowerCase();
+               if (m) dhcpMap[m] = { ip: l['address'] || l['active-address'] || '-', hostname: l['host-name'] || l['comment'] || '-' };
+             });
+          }
+
+          const enrich = (c: any) => {
+              const mac = (c['mac-address'] || '').toLowerCase();
+              const dhcp = dhcpMap[mac] || { ip: '-', hostname: '-' };
+              const signalStr = c['signal-strength'] || c['rx-signal'] || c['signal'] || '';
+              const signalMatch = signalStr.match(/-?\d+/);
+              const signalNum = signalMatch ? parseInt(signalMatch[0]) : -100;
+              
+              let experience = 'Good';
+              if (signalNum >= -60) experience = 'Excellent';
+              else if (signalNum < -80) experience = 'Poor';
+              
+              let standard = c['standard'] || '-';
+              if (standard === '-') {
+                const rateStr = c['tx-rate'] || '';
+                if (rateStr.includes('ax')) standard = 'WiFi 6';
+                else if (rateStr.includes('ac')) standard = 'WiFi 5';
+                else if (rateStr.includes('n')) standard = 'WiFi 4';
+              } else {
+                if (standard.includes('ax')) standard = 'WiFi 6';
+                else if (standard.includes('ac')) standard = 'WiFi 5';
+                else if (standard.includes('n')) standard = 'WiFi 4';
+              }
+
+              return {
+                mac: c['mac-address'] || '-',
+                ip: dhcp.ip,
+                hostname: dhcp.hostname,
+                signal: signalStr || '-',
+                signalNum,
+                experience,
+                standard,
+                txRate: c['tx-rate'] || c['tx-rate-set'] || '-',
+                rxRate: c['rx-rate'] || c['rx-rate-set'] || '-',
+                uptime: c['uptime'] || '-',
+                ap: device.name,
+                interface: c['interface'] || c['cap-interface'] || '-'
+              };
+          };
+
+          const clientsBefore = allClients.length;
+          if (Array.isArray(capReg)) capReg.forEach(c => allClients.push(enrich(c)));
+          if (Array.isArray(wlanReg)) wlanReg.forEach(c => allClients.push(enrich(c)));
+          if (Array.isArray(wifiReg)) wifiReg.forEach(c => allClients.push(enrich(c)));
+
+          // --- DHCP FALLBACK (For UniFi / Non-MikroTik APs) ---
+          // If no wireless clients were found on this router, but there are DHCP leases,
+          // it means this router is likely a gateway for non-MikroTik APs (like UniFi).
+          if (allClients.length === clientsBefore && Array.isArray(leases)) {
+            leases.forEach((l: any) => {
+              // Only add active leases to avoid cluttering with old history
+              if (l.status === 'bound' || l['active-address']) {
+                allClients.push({
+                  mac: (l['mac-address'] || '-').toLowerCase(),
+                  ip: l['address'] || l['active-address'] || '-',
+                  hostname: l['host-name'] || l['comment'] || 'Unknown Device',
+                  signal: 'N/A (UniFi/LAN)',
+                  signalNum: -100,
+                  experience: 'Good',
+                  standard: 'Ethernet/LAN',
+                  txRate: '-',
+                  rxRate: '-',
+                  uptime: l['expires-after'] ? `expires: ${l['expires-after']}` : '-',
+                  ap: device.name,
+                  interface: l['server'] || 'bridge'
+                });
+              }
+            });
+          }
+          
+          const duration = Date.now() - start;
+          console.log(`[Client-Scan] ✅ ${device.name} finished in ${duration}ms (${allClients.length - clientsBefore} clients)`);
+
+          await client.close();
+        } catch (err: any) {
+          const errorMsg = err.message || String(err);
+          console.error(`[Client-Scan] ❌ ${device.name} failed after ${Date.now() - start}ms:`, errorMsg);
+          scanErrors.push({
+            router: device.name,
+            host: device.host,
+            error: errorMsg.includes('SOCKTMOUT') ? 'Timed out (15s)' : errorMsg,
+            hint: 'Pastikan API MikroTik aktif.'
+          });
+
+        }
+      }));
+    }
+
+    // 2. SCAN EXTERNAL CONTROLLERS (UniFi, Omada, etc.)
+    const [controllers]: any = await db.query("SELECT * FROM network_controllers WHERE status = 'online' OR status = 'unknown'");
+    
+    await Promise.all(controllers.map(async (ctrl: any) => {
+      try {
+        const adapter = getControllerAdapter(ctrl.type);
+        if (adapter) {
+          const extClients = await adapter.getClients(ctrl);
+          extClients.forEach(c => allClients.push({
+            ...c,
+            source_label: ctrl.name // Label for tracking
+          }));
+          console.log(`[Client-Scan] 🌐 Controller "${ctrl.name}" finished (${extClients.length} clients)`);
+        }
+      } catch (err: any) {
+        console.error(`[Client-Scan] ❌ Controller "${ctrl.name}" failed:`, err.message);
+        scanErrors.push({
+          router: ctrl.name,
+          host: ctrl.host,
+          error: `External: ${err.message}`,
+          hint: `Cek log API di ${ctrl.host}.`
+        });
+      }
+    }));
+
+    const response = { 
+      clients: allClients.map(c => ({ ...c, source_label: c.source_label || 'MikroTik' })), 
+      errors: scanErrors, 
+      totalRouters: devices.length + controllers.length,
+      scanTime: Date.now() - startGlobal,
+      fresh: true 
+    };
+
+    // Update Cache
+    clientCache = { data: response, timestamp: Date.now() };
+
+    console.log(`[Client-Scan] ✨ Scan complete! Total: ${allClients.length} clients in ${Date.now() - startGlobal}ms`);
+    res.json(response);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+export default dashboardRouter;
+
+
+

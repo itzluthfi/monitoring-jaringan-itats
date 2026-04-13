@@ -13,6 +13,8 @@ import { accessPointsRouter } from "./routes/access_points.route.js";
 import { vlanRouter } from './routes/vlan.route';
 import { logsRouter } from './routes/logs.route';
 import { settingsRouter } from './routes/settings.route';
+import { adapterRouter } from './routes/adapter.route';
+import { controllersRouter } from './routes/controllers.route';
 import { requireAuth } from './middleware/auth';
 
 dotenv.config();
@@ -61,12 +63,13 @@ app.use('/api/public', publicRouter);
 // Protected routes
 app.use('/api/mikrotiks', requireAuth, mikrotiksRouter);
 app.use('/api/mikrotiks', requireAuth, vlanRouter);
-
 app.use('/api', requireAuth, dashboardRouter);
 app.use("/api/notifications", requireAuth, notificationsRouter);
 app.use("/api/access-points", requireAuth, accessPointsRouter);
 app.use("/api/logs", requireAuth, logsRouter);
 app.use("/api/settings", requireAuth, settingsRouter);
+app.use("/api/adapters", requireAuth, adapterRouter);
+app.use("/api/controllers", requireAuth, controllersRouter);
 
 // ── Background Jobs ─────────────────────────────────────────────────────────
 

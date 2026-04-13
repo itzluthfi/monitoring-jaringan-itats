@@ -32,16 +32,26 @@ export function NotificationsView() {
   }, [page, limit]);
 
   const markRead = (id: number) => {
-    authFetch(`/api/notifications/${id}/read`, { method: 'POST' }).then(fetchNotifs);
+    authFetch(`/api/notifications/${id}/read`, { method: 'POST' }).then(() => {
+      fetchNotifs();
+      window.dispatchEvent(new CustomEvent('notifications-changed'));
+    });
   };
 
   const markAllRead = () => {
-    authFetch('/api/notifications/read-all', { method: 'POST' }).then(fetchNotifs);
+    authFetch('/api/notifications/read-all', { method: 'POST' }).then(() => {
+      fetchNotifs();
+      window.dispatchEvent(new CustomEvent('notifications-changed'));
+    });
   };
 
   const deleteNotif = (id: number) => {
-    authFetch(`/api/notifications/${id}`, { method: 'DELETE' }).then(fetchNotifs);
+    authFetch(`/api/notifications/${id}`, { method: 'DELETE' }).then(() => {
+      fetchNotifs();
+      window.dispatchEvent(new CustomEvent('notifications-changed'));
+    });
   };
+
 
   if (loading) {
     return (

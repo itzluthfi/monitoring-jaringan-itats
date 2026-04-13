@@ -49,7 +49,7 @@ mikrotiksRouter.get('/stats', requireAuth, async (req, res) => {
 
 mikrotiksRouter.get('/', requireAuth, async (req, res) => {
   try {
-    const [devices] = await db.query("SELECT id, name, host, user, port, last_seen, status, is_primary, lat, lng, level, logs_enabled FROM mikrotik_devices");
+    const [devices] = await db.query("SELECT id, name, host, user, port, last_seen, status, is_primary, lat, lng, level, logs_enabled, driver, snmp_community, snmp_port FROM mikrotik_devices");
     res.json(devices);
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -90,15 +90,15 @@ mikrotiksRouter.post('/:id/primary', requireAuth, async (req, res) => {
 });
 
 mikrotiksRouter.post('/', requireAuth, async (req, res) => {
-  const { name, host, user, password, port, lat, lng, level } = req.body;
+  const { name, host, user, password, port, lat, lng, level, driver, snmp_community, snmp_port } = req.body;
   if (!name || !host || !user || !password) {
     return res.status(400).json({ error: "Missing required fields" });
   }
   
   try {
     const [result]: any = await db.query(
-      "INSERT INTO mikrotik_devices (name, host, user, password, port, lat, lng, level) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [name, host, user, password, port || 8728, lat || null, lng || null, level || null]
+      "INSERT INTO mikrotik_devices (name, host, user, password, port, lat, lng, level, driver, snmp_community, snmp_port) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [name, host, user, password, port || 8728, lat || null, lng || null, level || null, driver || 'mikrotik', snmp_community || 'public', snmp_port || 161]
     );
     res.json({ id: result.insertId });
   } catch (err) {
@@ -116,24 +116,27 @@ mikrotiksRouter.delete('/:id', requireAuth, async (req, res) => {
 });
 
 mikrotiksRouter.put('/:id', requireAuth, async (req, res) => {
-  const { name, host, user, password, port, lat, lng, level } = req.body;
+  const { name, host, user, password, port, lat, lng, level, driver, snmp_community, snmp_port } = req.body;
   if (!name || !host || !user) {
     return res.status(400).json({ error: "Missing required fields" });
   }
   
   const latVal = (lat !== '' && lat !== undefined && lat !== null) ? parseFloat(lat) : null;
   const lngVal = (lng !== '' && lng !== undefined && lng !== null) ? parseFloat(lng) : null;
+  const driverVal = driver || 'mikrotik';
+  const snmpCommunityVal = snmp_community || 'public';
+  const snmpPortVal = snmp_port || 161;
 
   try {
     if (password) {
       await db.query(
-        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, password = ?, port = ?, lat = ?, lng = ?, level = ? WHERE id = ?",
-        [name, host, user, password, port || 8728, latVal, lngVal, level || null, req.params.id]
+        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, password = ?, port = ?, lat = ?, lng = ?, level = ?, driver = ?, snmp_community = ?, snmp_port = ? WHERE id = ?",
+        [name, host, user, password, port || 8728, latVal, lngVal, level || null, driverVal, snmpCommunityVal, snmpPortVal, req.params.id]
       );
     } else {
       await db.query(
-        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, port = ?, lat = ?, lng = ?, level = ? WHERE id = ?",
-        [name, host, user, port || 8728, latVal, lngVal, level || null, req.params.id]
+        "UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, port = ?, lat = ?, lng = ?, level = ?, driver = ?, snmp_community = ?, snmp_port = ? WHERE id = ?",
+        [name, host, user, port || 8728, latVal, lngVal, level || null, driverVal, snmpCommunityVal, snmpPortVal, req.params.id]
       );
     }
     res.json({ success: true });
@@ -141,6 +144,26 @@ mikrotiksRouter.put('/:id', requireAuth, async (req, res) => {
     res.status(500).json({ error: String(err) });
   }
 });
+
+// ─── FIX #6: Retry helper dengan exponential backoff ──────────────────────
+// Digunakan untuk koneksi yang kadang gagal karena transient timeout.
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 800): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const isTransient = err?.errno === 'ECONNRESET' || err?.message?.includes('timeout') ||
+        err?.message?.includes('Timed out') || err?.name === 'RosException';
+      if (isTransient && attempt < retries) {
+        console.warn(`[Retry] Attempt ${attempt + 1}/${retries} failed, retrying in ${delayMs}ms...`);
+        await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
 
 mikrotiksRouter.get('/:id/status', async (req, res) => {
   try {
@@ -150,7 +173,7 @@ mikrotiksRouter.get('/:id/status', async (req, res) => {
     if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
         return res.json({
           online: true,
-          protocol: 'SNMP', // Tag to show UI
+          protocol: 'Simulation',
           identity: device.name,
           uptime: "10h 20m 30s",
           version: "RouterOS Simulation",
@@ -159,12 +182,59 @@ mikrotiksRouter.get('/:id/status', async (req, res) => {
         });
     }
 
-    // SNMP Check for Telemetry
+    const deviceDriver = (device.driver || 'mikrotik').toLowerCase();
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FIX #5: Gunakan RouterOS API untuk MikroTik (bukan SNMP)
+    // Logika SNMP lama di bawah tetap dipakai untuk driver 'snmp'
+    // ─────────────────────────────────────────────────────────────────────────
+    if (deviceDriver === 'mikrotik') {
+      try {
+        const result = await withRetry(async () => {
+          const client = createMikrotikClient(device);
+          const api = await client.connect();
+          const [resSys, identityArr] = await Promise.all([
+            (api as any).rosApi.write(['/system/resource/print']).catch(() => [{}]),
+            (api as any).rosApi.write(['/system/identity/print']).catch(() => [{}]),
+          ]);
+          await client.close().catch(() => {});
+          return { resSys, identityArr };
+        });
+
+        const sys = Array.isArray(result.resSys) ? result.resSys[0] || {} : {};
+        const identity = Array.isArray(result.identityArr) ? result.identityArr[0] || {} : {};
+
+        return res.json({
+          online: true,
+          protocol: 'RouterOS API',
+          identity: identity.name || device.name,
+          uptime: sys.uptime || '0s',
+          version: sys.version || 'Unknown',
+          cpuLoad: Number(sys['cpu-load'] || 0),
+          freeMemory: Number(sys['free-memory'] || 0),
+          totalMemory: Number(sys['total-memory'] || 0),
+        });
+      } catch (err: any) {
+        return res.json({
+          online: false,
+          protocol: 'RouterOS API',
+          error: err?.message || String(err),
+        });
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LOGIKA SNMP LAMA — tetap utuh, dipakai untuk driver 'snmp' dan lainnya
+    // ─────────────────────────────────────────────────────────────────────────
     const community = device.snmp_community || "public";
-    const session = snmp.createSession(device.host, community);
+    const session = snmp.createSession(device.host, community, {
+      port: device.snmp_port || 161,
+      timeout: 5000,
+      retries: 1,
+    });
     
     const getOid = (oid: string): Promise<any> => new Promise((resolve) => {
-      session.get([oid], (error, varbinds) => {
+      session.get([oid], (error: any, varbinds: any[]) => {
         if (error || snmp.isVarbindError(varbinds[0])) {
           resolve(null);
         } else {
@@ -178,15 +248,15 @@ mikrotiksRouter.get('/:id/status', async (req, res) => {
         getOid("1.3.6.1.2.1.1.1.0"), // sysDescr (Version details)
         getOid("1.3.6.1.2.1.1.3.0"), // sysUpTime
         getOid("1.3.6.1.2.1.1.5.0"), // sysName (Identity)
-        getOid("1.3.6.1.4.1.14988.1.1.1.4.1.0"), // mtMemFree
-        getOid("1.3.6.1.4.1.14988.1.1.1.4.2.0")  // mtProcessorLoad
+        getOid("1.3.6.1.4.1.14988.1.1.1.4.1.0"), // mtMemFree (MikroTik-specific, will be null for others)
+        getOid("1.3.6.1.4.1.14988.1.1.1.4.2.0")  // mtProcessorLoad (MikroTik-specific)
       ]);
 
       session.close();
 
       if (uptimeTicks === null) {
         const isPrivateIP = device.host.startsWith("192.168.") || device.host.startsWith("10.") || device.host.startsWith("172.");
-        let errorMsg = `Koneksi SNMP Gagal. Pastikan IP->SNMP->Enabled dan Community='${community}'.`;
+        let errorMsg = `Koneksi SNMP Gagal. Pastikan IP→SNMP→Enabled dan Community='${community}'.`;
         if (isPrivateIP) errorMsg += " (Private IP mungkin tidak bisa diakses).";
         return res.json({ online: false, protocol: 'SNMP', error: errorMsg });
       }
@@ -220,6 +290,8 @@ mikrotiksRouter.get('/:id/status', async (req, res) => {
   }
 });
 
+
+
 mikrotiksRouter.post('/:id/reboot', requireAuth, async (req, res) => {
   try {
     const [[device]]: any = await db.query("SELECT * FROM mikrotik_devices WHERE id = ?", [req.params.id]);
@@ -238,6 +310,111 @@ mikrotiksRouter.get('/:id/interfaces', async (req, res) => {
   try {
     const [[device]]: any = await db.query("SELECT * FROM mikrotik_devices WHERE id = ?", [req.params.id]);
     if (!device) return res.status(404).json({ error: "Device not found" });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ── CABANG BARU: SNMP / Driver selain MikroTik (ADDITIVE — tidak mengubah logika lama) ──
+    //
+    // Jika device dikonfigurasi dengan driver 'snmp' (atau driver lain non-mikrotik),
+    // gunakan SNMP adapter yang sudah dinormalisasi. Logika MikroTik original
+    // di bawah ini TIDAK disentuh dan tetap berjalan untuk driver 'mikrotik'.
+    // ─────────────────────────────────────────────────────────────────────────
+    const deviceDriver = (device.driver || 'mikrotik').toLowerCase();
+
+    if (deviceDriver !== 'mikrotik') {
+      console.log(`[Interfaces] Device "${device.name}" (id=${device.id}) menggunakan driver "${deviceDriver}" — routing ke SNMP adapter.`);
+
+      // ── Guard: pastikan net-snmp tersedia ──
+      let snmpAdapterModule: any;
+      try {
+        snmpAdapterModule = await import('../adapters/snmp.adapter');
+      } catch (importErr) {
+        console.error('[Interfaces/SNMP] Gagal load SNMP adapter:', importErr);
+        return res.status(503).json({
+          error: 'SNMP adapter tidak tersedia. Pastikan net-snmp terinstall.',
+          driver: deviceDriver,
+          hint: 'Jalankan: npm install net-snmp'
+        });
+      }
+
+      const adapter = new snmpAdapterModule.SnmpAdapter();
+
+      // ── Guard: validasi konfigurasi SNMP device ──
+      if (!device.host) {
+        return res.status(400).json({
+          error: 'Device tidak memiliki IP host yang valid untuk koneksi SNMP.',
+          driver: deviceDriver
+        });
+      }
+
+      const community = device.snmp_community || 'public';
+      const snmpPort = device.snmp_port || 161;
+
+      // Beri tahu jika pakai default community (kemungkinan belum dikonfigurasi)
+      if (community === 'public') {
+        console.warn(`[Interfaces/SNMP] Device "${device.name}" menggunakan SNMP community default "public". Pastikan sudah dikonfigurasi.`);
+      }
+
+      try {
+        const interfaces = await adapter.getInterfaces({
+          ...device,
+          snmp_community: community,
+          snmp_port: snmpPort,
+        });
+
+        // ── Guard: data kosong (SNMP tidak merespons atau tidak ada interface) ──
+        if (!Array.isArray(interfaces) || interfaces.length === 0) {
+          console.warn(`[Interfaces/SNMP] Device "${device.name}" — SNMP berhasil terhubung tapi data interface kosong.`);
+          return res.json({
+            _snmpWarning: true,
+            _message: `SNMP terhubung ke ${device.host} (community: "${community}") tapi tidak ada interface yang ditemukan. Pastikan SNMP MIB IF-MIB aktif di perangkat.`,
+            _hint: 'Coba cek: snmpwalk -v2c -c ' + community + ' ' + device.host + ' 1.3.6.1.2.1.2.2.1.2',
+            interfaces: []
+          });
+        }
+
+        console.log(`[Interfaces/SNMP] Device "${device.name}" — berhasil mengambil ${interfaces.length} interface.`);
+        return res.json(interfaces);
+
+      } catch (snmpErr: any) {
+        const errMsg = snmpErr?.message || String(snmpErr);
+        console.error(`[Interfaces/SNMP] Gagal mengambil interface dari "${device.name}" (${device.host}):`, errMsg);
+
+        // ── Klasifikasi jenis error SNMP untuk pesan yang informatif ──
+        let userMessage = `Gagal terhubung ke SNMP pada ${device.host}:${snmpPort}.`;
+        let hint = '';
+
+        if (errMsg.includes('timeout') || errMsg.includes('Timed out') || errMsg.includes('ETIMEDOUT')) {
+          userMessage = `Koneksi SNMP timeout ke ${device.host}:${snmpPort}.`;
+          hint = `Kemungkinan penyebab: (1) SNMP belum diaktifkan di perangkat, (2) Firewall memblokir port UDP ${snmpPort}, (3) IP tidak dapat dijangkau dari server.`;
+        } else if (errMsg.includes('ECONNREFUSED')) {
+          userMessage = `Koneksi SNMP ditolak oleh ${device.host}:${snmpPort}.`;
+          hint = 'Pastikan service SNMP sudah berjalan di perangkat dan port tidak diblokir.';
+        } else if (errMsg.includes('ENOTFOUND') || errMsg.includes('EHOSTUNREACH')) {
+          userMessage = `Host ${device.host} tidak dapat dijangkau.`;
+          hint = 'Periksa bahwa IP address device sudah benar dan bisa di-ping dari server.';
+        } else if (errMsg.includes('noSuchName') || errMsg.includes('noSuchObject')) {
+          userMessage = `SNMP terhubung tapi OID IF-MIB tidak didukung oleh ${device.name}.`;
+          hint = 'Perangkat mungkin tidak mendukung IF-MIB standar. Coba aktifkan SNMP MIB di pengaturan perangkat.';
+        } else if (errMsg.includes('community') || errMsg.includes('authentication') || errMsg.includes('noAccess')) {
+          userMessage = `SNMP Community string tidak valid. Community "${community}" ditolak oleh ${device.name}.`;
+          hint = `Perbarui SNMP Community di menu Edit Device → SNMP Community. Default biasanya "public".`;
+        }
+
+        return res.status(502).json({
+          error: userMessage,
+          hint,
+          driver: deviceDriver,
+          host: device.host,
+          port: snmpPort,
+          community,
+          raw: errMsg,
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // ── LOGIKA MIKROTIK LAMA — TIDAK DIUBAH SAMA SEKALI (mulai dari sini) ──
+    // Driver: 'mikrotik' (default)
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
       return res.json([
@@ -296,6 +473,7 @@ mikrotiksRouter.get('/:id/interfaces', async (req, res) => {
     res.status(500).json({ error: String(err) });
   }
 });
+
 
 mikrotiksRouter.post('/:id/interfaces/:name/toggle', requireAuth, async (req, res) => {
   try {

@@ -90,7 +90,7 @@ export function Sidebar({
                     if (window.innerWidth < 768) setIsOpen(false);
                   }}
                   className={({ isActive }) => cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative group",
                     isCollapsed ? "justify-center" : "",
                     isActive 
                       ? "bg-indigo-500/10 text-indigo-400 shadow-[inset_0_0_15px_rgba(99,102,241,0.05)] border border-indigo-500/20" 
@@ -101,17 +101,29 @@ export function Sidebar({
                     <>
                       <Icon className={cn("w-5 h-5 flex-shrink-0 transition-colors", isActive ? "text-indigo-400" : "text-zinc-500")} />
                       {!isCollapsed && <span className="flex-1 truncate animate-in slide-in-from-left-2 duration-300">{item.label}</span>}
+                      
+                      {/* Hover Tooltip for Collapsed Sidebar */}
+                      {isCollapsed && (
+                        <div className="absolute left-full ml-4 px-3 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-lg shadow-xl opacity-0 translate-x-[-10px] pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 z-[100] whitespace-nowrap border border-indigo-500/50">
+                          {item.label}
+                          {/* Triangle arrow for tooltip */}
+                          <div className="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-indigo-600" />
+                        </div>
+                      )}
+
                       {item.id === 'notifications' && Boolean(unreadCount && unreadCount > 0) && (
                         <span className={cn(
-                          "bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-lg shadow-rose-500/20",
-                          isCollapsed ? "absolute top-2 right-2 scale-75" : ""
+                          "bg-rose-500 text-white text-[10px] font-black min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-lg shadow-rose-500/20 border border-zinc-950",
+                          isCollapsed ? "absolute top-1.5 right-1.5 scale-90" : "px-1.5 py-0.5"
                         )}>
-                          {unreadCount}
+                          {unreadCount > 9 ? '9+' : unreadCount}
                         </span>
                       )}
                     </>
                   )}
+
                 </NavLink>
+
               );
             })}
           </nav>
