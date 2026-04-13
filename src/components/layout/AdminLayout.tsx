@@ -76,7 +76,7 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
                     const isCritical = n.type === 'critical' || n.type === 'error';
 
                     toast.custom((t) => (
-                      <div className={`${t.visible ? 'animate-in slide-in-from-top-5 fade-in duration-300' : 'animate-out slide-out-to-top-5 fade-out duration-300'} max-w-sm w-full bg-zinc-900 border ${isCritical ? 'border-red-500/50 shadow-red-500/10' : 'border-indigo-500/50 shadow-indigo-500/10'} shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5`}>
+                      <div className={`${t.visible ? 'animate-in slide-in-from-top-5 fade-in duration-300' : 'animate-out slide-out-to-top-5 fade-out duration-300'} max-w-sm w-full bg-zinc-900 border ${isCritical ? 'border-red-500/50 shadow-red-500/10' : 'border-indigo-500/50 shadow-indigo-500/10'} shadow-2xl rounded-2xl pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5 relative overflow-hidden`}>
                         <div className="flex-1 w-0 p-4">
                           <div className="flex items-start">
                             <div className={`flex-shrink-0 pt-0.5 ${isCritical ? 'text-red-400' : 'text-indigo-400'}`}>
@@ -103,8 +103,13 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
                             </div>
                           </div>
                         </div>
+                        {/* Progress Bar */}
+                        <div 
+                          className={`absolute bottom-0 left-0 h-1 ${isCritical ? 'bg-red-500' : 'bg-indigo-500'} animate-toast-progress`}
+                          style={{ animationDuration: '3500ms', animationTimingFunction: 'linear' }}
+                        />
                       </div>
-                    ), { duration: 8000, position: 'top-center' });
+                    ), { duration: 3500, position: 'top-center' });
                   });
                 }
                 setLastSeenId(latestIdInFetch);
@@ -175,8 +180,8 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-rose-500 text-white text-[10px] font-black flex items-center justify-center rounded-full border-2 border-zinc-950 px-1 shadow-lg shadow-rose-500/30 animate-in zoom-in-0 duration-300">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                  <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-rose-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-zinc-950 px-1 shadow-lg shadow-rose-500/30 animate-in zoom-in-0 duration-300">
+                    {unreadCount > 100 ? '100+' : unreadCount}
                   </span>
                 )}
 

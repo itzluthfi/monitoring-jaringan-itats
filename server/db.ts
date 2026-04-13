@@ -203,7 +203,8 @@ export const initializeDB = async () => {
       await addColumnIfMissing('mikrotik_aps', 'mode', "VARCHAR(50) DEFAULT 'ap' AFTER interface_name");
       await addColumnIfMissing('mikrotik_aps', 'status', "VARCHAR(20) DEFAULT 'online' AFTER group_label");
       await addColumnIfMissing('mikrotik_aps', 'last_client_count', "INT DEFAULT 0 AFTER status");
-      await addColumnIfMissing('mikrotik_aps', 'last_seen', "TIMESTAMP NULL AFTER lng");
+      await addColumnIfMissing('mikrotik_aps', 'last_error', "TEXT NULL AFTER last_client_count");
+      await addColumnIfMissing('mikrotik_aps', 'last_seen', "TIMESTAMP NULL AFTER last_error");
       await addColumnIfMissing('mikrotik_devices', 'level', "INT DEFAULT NULL AFTER lng");
       await addColumnIfMissing('mikrotik_devices', 'driver', "VARCHAR(50) DEFAULT 'mikrotik' AFTER level");
       await addColumnIfMissing('mikrotik_devices', 'snmp_port', "INT DEFAULT 161 AFTER snmp_community");

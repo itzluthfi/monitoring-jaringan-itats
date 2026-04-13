@@ -469,14 +469,15 @@ const upsertDiscoveredAP = async (routerId: number, ap: any): Promise<number | n
       group_label: ap.group_label || null,
       status: statusVal,
       last_client_count: ap.clients || 0,
+      last_error: ap.error || null,
       last_seen: new Date()
     };
 
     if (rows.length > 0) {
       // Update
       await db.query(
-        "UPDATE mikrotik_aps SET name = ?, ip_address = ?, interface_name = ?, mode = ?, status = ?, last_client_count = ?, last_seen = NOW() WHERE id = ?",
-        [apData.name, apData.ip_address, apData.interface_name, apData.mode, apData.status, apData.last_client_count, rows[0].id]
+        "UPDATE mikrotik_aps SET name = ?, ip_address = ?, interface_name = ?, mode = ?, status = ?, last_client_count = ?, last_error = ?, last_seen = NOW() WHERE id = ?",
+        [apData.name, apData.ip_address, apData.interface_name, apData.mode, apData.status, apData.last_client_count, apData.last_error, rows[0].id]
       );
       
       // Log status change if transitioned
@@ -491,8 +492,8 @@ const upsertDiscoveredAP = async (routerId: number, ap: any): Promise<number | n
     } else {
       // Insert
       const [insertRes]: any = await db.query(
-        "INSERT INTO mikrotik_aps (mikrotik_id, name, mac_address, ip_address, interface_name, mode, status, last_client_count, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-        [apData.mikrotik_id, apData.name, apData.mac_address, apData.ip_address, apData.interface_name, apData.mode, apData.status, apData.last_client_count]
+        "INSERT INTO mikrotik_aps (mikrotik_id, name, mac_address, ip_address, interface_name, mode, status, last_client_count, last_error, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+        [apData.mikrotik_id, apData.name, apData.mac_address, apData.ip_address, apData.interface_name, apData.mode, apData.status, apData.last_client_count, apData.last_error]
       );
       console.log(`[Topology-Sync] Success: synced ${ap.name} (${mac})`);
       return insertRes.insertId;
@@ -1235,8 +1236,15 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
 
           await client.close();
 
-        } catch (err) {
-          console.error(`[Topology] AP fetch error for ${device.name}:`, err);
+        } catch (err: any) {
+          const errMsg = String(err?.message || err || "Unknown Connection Error");
+          console.error(`[Topology] AP fetch error for ${device.name}:`, errMsg);
+          
+          // Propagate router error to all its APs in DB so user knows WHY they are offline
+          await db.query(
+            "UPDATE mikrotik_aps SET status = 'offline', last_error = ?, last_seen = NOW() WHERE mikrotik_id = ?",
+            [errMsg, device.id]
+          );
         }
       }
       
@@ -1279,7 +1287,8 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
             clients: 0,
             clientDetails: [],
             mac_address: dbAp.mac_address,
-            lastSeen: dbAp.last_seen
+            lastSeen: dbAp.last_seen,
+            lastError: dbAp.last_error
           });
         }
       }
@@ -1293,10 +1302,18 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
         lastSeen: device.last_seen,
         isPrimary: device.is_primary === 1,
         wifiSource,
-        children: accessPoints.map(ap => ({
-          ...ap,
-          status: routerOnline ? ap.status : 'offline'
-        }))
+        children: [
+          {
+            id: `switch-core-${device.id}`,
+            name: `Core Switch - ${device.name}`,
+            type: 'switch',
+            status: routerOnline ? 'online' : 'offline',
+            children: accessPoints.map(ap => ({
+              ...ap,
+              status: routerOnline ? ap.status : 'offline'
+            }))
+          }
+        ]
       };
     }));
 

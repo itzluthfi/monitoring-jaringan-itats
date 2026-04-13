@@ -113,10 +113,10 @@ export function Sidebar({
 
                       {item.id === 'notifications' && Boolean(unreadCount && unreadCount > 0) && (
                         <span className={cn(
-                          "bg-rose-500 text-white text-[10px] font-black min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-lg shadow-rose-500/20 border border-zinc-950",
+                          "bg-rose-500 text-white text-[9px] font-black min-w-[20px] h-[20px] flex items-center justify-center rounded-full shadow-lg shadow-rose-500/20 border border-zinc-950",
                           isCollapsed ? "absolute top-1.5 right-1.5 scale-90" : "px-1.5 py-0.5"
                         )}>
-                          {unreadCount > 9 ? '9+' : unreadCount}
+                          {unreadCount > 100 ? '100+' : unreadCount}
                         </span>
                       )}
                     </>

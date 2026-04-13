@@ -6,7 +6,7 @@ export const accessPointsRouter = Router();
 // GET all APs (optionally filtered by mikrotik_id)
 accessPointsRouter.get("/", async (req, res) => {
   try {
-    const { mikrotik_id, status } = req.query;
+    const { mikrotik_id, status, mode } = req.query;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 25;
     const offset = (page - 1) * limit;
@@ -28,6 +28,12 @@ accessPointsRouter.get("/", async (req, res) => {
       whereClauses.push("a.status = ?");
       params.push(status);
       countParams.push(status);
+    }
+
+    if (mode) {
+      whereClauses.push("a.mode = ?");
+      params.push(mode);
+      countParams.push(mode);
     }
 
     if (whereClauses.length > 0) {

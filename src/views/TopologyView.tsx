@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Network, Server, Monitor, Router as RouterIcon,
   Wifi, X, Signal, Users, Clock, Radio,
-  CheckCircle, XCircle, AlertCircle, Maximize, Minimize
+  CheckCircle, XCircle, AlertCircle, Maximize, Minimize, ChevronRight, HelpCircle, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
@@ -58,6 +58,14 @@ const getIcon = (type: string) => {
   if (type === 'ap')     return Wifi;
   return Monitor;
 };
+
+const LEGEND_ITEMS = [
+  { icon: Network,    label: 'Internet',  color: 'text-indigo-400' },
+  { icon: Server,     label: 'Core Router', color: 'text-zinc-400' },
+  { icon: RouterIcon, label: 'Switch',    color: 'text-zinc-400' },
+  { icon: Wifi,       label: 'Access Pt', color: 'text-emerald-400' },
+  { icon: Radio,      label: 'Backbone',  color: 'text-rose-400' },
+];
 
 // ── AP Card ──────────────────────────────────────────────────────────────────
 function APCard({ node, selected, onClick }: { node: TopologyNode; selected: boolean; onClick: () => void }) {
@@ -462,6 +470,57 @@ export function TopologyView() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showOfflineModal, setShowOfflineModal] = useState(false);
+  const [isLegendOpen, setIsLegendOpen] = useState(true);
+  const [topologySearch, setTopologySearch] = useState('');
+  const [searchMatches, setSearchMatches] = useState<TopologyNode[]>([]);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
+
+  // Search logic
+  const handleSearch = (term: string) => {
+    setTopologySearch(term);
+    if (!term.trim() || !topology) {
+      setSearchMatches([]);
+      setActiveMatchIndex(-1);
+      return;
+    }
+
+    const matches: TopologyNode[] = [];
+    const findNodes = (node: TopologyNode) => {
+      if (node.name.toLowerCase().includes(term.toLowerCase()) || 
+          (node.ssid || '').toLowerCase().includes(term.toLowerCase()) ||
+          (node.host || '').toLowerCase().includes(term.toLowerCase())) {
+        matches.push(node);
+      }
+      node.children?.forEach(findNodes);
+    };
+    
+    topology.children?.forEach(findNodes);
+    setSearchMatches(matches);
+    
+    if (matches.length > 0) {
+      const idx = 0;
+      setActiveMatchIndex(idx);
+      focusOnNode(matches[idx]);
+    } else {
+      setActiveMatchIndex(-1);
+    }
+  };
+
+  const focusOnNode = (node: TopologyNode) => {
+    setSelectedNode(node);
+    setActiveRouters(new Set(['all'])); // ensure it's visible
+    setTimeout(() => {
+      const el = document.getElementById(`node-${node.id}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    }, 100);
+  };
+
+  const nextMatch = () => {
+    if (searchMatches.length === 0) return;
+    const nextIdx = (activeMatchIndex + 1) % searchMatches.length;
+    setActiveMatchIndex(nextIdx);
+    focusOnNode(searchMatches[nextIdx]);
+  };
 
   useEffect(() => {
     const fetchTopo = () => {
@@ -576,6 +635,32 @@ export function TopologyView() {
           </div>
           {/* Stats pills */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* ── Search Bar (Now on the Left) ───────────────────── */}
+            <div className="flex items-center bg-zinc-900 border border-zinc-700/50 rounded-lg px-2.5 py-1.5 shadow-xl backdrop-blur-md mr-1 h-[34px]">
+               <Monitor className="w-3.5 h-3.5 text-zinc-500 mr-2" />
+               <input 
+                 type="text"
+                 placeholder="Search node..."
+                 className="bg-transparent border-none outline-none text-[11px] text-zinc-100 w-24 md:w-36 placeholder:text-zinc-600"
+                 value={topologySearch}
+                 onChange={e => handleSearch(e.target.value)}
+                 onKeyDown={e => e.key === 'Enter' && nextMatch()}
+               />
+               {searchMatches.length > 0 && (
+                 <div className="flex items-center gap-1.5 border-l border-zinc-800 ml-2 pl-2">
+                    <span className="text-[10px] text-zinc-500 font-bold whitespace-nowrap">{activeMatchIndex + 1}/{searchMatches.length}</span>
+                    <button onClick={nextMatch} className="p-0.5 hover:bg-zinc-800 rounded transition-colors" title="Next Match">
+                      <ChevronRight className="w-3 h-3 text-indigo-400" />
+                    </button>
+                 </div>
+               )}
+               {topologySearch && (
+                 <button onClick={() => handleSearch('')} className="ml-0.5 p-0.5 hover:bg-zinc-800 rounded transition-colors" title="Clear Search">
+                   <X className="w-3 h-3 text-zinc-500" />
+                 </button>
+               )}
+            </div>
+
             <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5">
               <Server className="w-3.5 h-3.5 text-indigo-400" />
               <span className="text-xs text-zinc-300"><span className="font-bold text-indigo-400">{stats.totalRouters}</span> Router</span>
@@ -727,6 +812,33 @@ export function TopologyView() {
         {selectedNode && (
           <DetailPanel node={selectedNode} topology={topology} onClose={() => setSelectedNode(null)} />
         )}
+
+        {/* ── Legend Overlay ──────────────────────────────────────────────── */}
+        <div className={`absolute left-6 bottom-6 flex flex-col transition-all duration-300 z-10 ${isLegendOpen ? 'gap-2 p-3 bg-zinc-950/80 border border-zinc-800/50 backdrop-blur-xl rounded-2xl shadow-2xl' : 'p-0'}`}>
+           <button 
+             onClick={() => setIsLegendOpen(!isLegendOpen)}
+             className={`flex items-center gap-2 group transition-all ${isLegendOpen ? 'mb-1 pl-1' : 'bg-zinc-900/90 border border-zinc-800 p-2.5 rounded-full shadow-2xl hover:bg-zinc-800 pointer-events-auto'}`}
+             title={isLegendOpen ? "Collapse Legend" : "Show Legend"}
+           >
+              {isLegendOpen ? (
+                <>
+                  <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Legend</p>
+                  <ChevronDown className="w-3 h-3 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
+                </>
+              ) : (
+                <HelpCircle className="w-5 h-5 text-indigo-400" />
+              )}
+           </button>
+           
+           {isLegendOpen && LEGEND_ITEMS.map((item, i) => (
+             <div key={i} className="flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-1 duration-300" style={{ animationDelay: `${i * 50}ms` }}>
+                <div className="p-1.5 bg-zinc-900 rounded-lg">
+                  <item.icon className={`w-3 h-3 ${item.color}`} />
+                </div>
+                <span className="text-[10px] text-zinc-300 font-medium whitespace-nowrap">{item.label}</span>
+             </div>
+           ))}
+        </div>
       </div>
 
       {showOfflineModal && (

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, Wifi, MapPin, Monitor, Server, Tag, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Plus, Trash2, Edit2, Wifi, MapPin, Monitor, Server, Tag, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
 import Swal from 'sweetalert2';
@@ -13,6 +13,10 @@ export function AccessPointsView() {
   const [limit, setLimit] = useState(25);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [filterType, setFilterType] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterMikrotik, setFilterMikrotik] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAp, setEditingAp] = useState<any>(null);
@@ -20,7 +24,12 @@ export function AccessPointsView() {
   const [formData, setFormData] = useState({ mikrotik_id: '', name: '', group_label: '', lat: '', lng: '', ip_address: '' });
 
   const fetchAps = () => {
-    authFetch(`/api/access-points?page=${page}&limit=${limit}`)
+    let url = `/api/access-points?page=${page}&limit=${limit}`;
+    if (filterType !== 'all') url += `&mode=${filterType}`;
+    if (filterStatus !== 'all') url += `&status=${filterStatus}`;
+    if (filterMikrotik !== 'all') url += `&mikrotik_id=${filterMikrotik}`;
+
+    authFetch(url)
       .then(r => r.json())
       .then(data => {
         if (data && Array.isArray(data.data)) {
@@ -41,8 +50,13 @@ export function AccessPointsView() {
 
   useEffect(() => {
     setLoading(true);
+    let url = `/api/access-points?page=${page}&limit=${limit}`;
+    if (filterType !== 'all') url += `&mode=${filterType}`;
+    if (filterStatus !== 'all') url += `&status=${filterStatus}`;
+    if (filterMikrotik !== 'all') url += `&mikrotik_id=${filterMikrotik}`;
+
     Promise.all([
-      authFetch(`/api/access-points?page=${page}&limit=${limit}`).then(r => r.json()),
+      authFetch(url).then(r => r.json()),
       authFetch('/api/mikrotiks').then(r => r.json())
     ]).then(([apsData, devicesData]) => {
       if (apsData && Array.isArray(apsData.data)) {
@@ -54,7 +68,7 @@ export function AccessPointsView() {
     })
     .catch(console.error)
     .finally(() => setLoading(false));
-  }, [page, limit]);
+  }, [page, limit, filterType, filterStatus, filterMikrotik]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,6 +119,17 @@ export function AccessPointsView() {
     }
   };
 
+  const filteredAps = useMemo(() => {
+    if (!searchTerm) return aps;
+    const term = searchTerm.toLowerCase();
+    return aps.filter(ap => 
+      ap.name.toLowerCase().includes(term) || 
+      (ap.mac_address || '').toLowerCase().includes(term) ||
+      (ap.ip_address || '').toLowerCase().includes(term) ||
+      (ap.group_label || '').toLowerCase().includes(term)
+    );
+  }, [aps, searchTerm]);
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
@@ -115,10 +140,58 @@ export function AccessPointsView() {
 
   return (
     <div className="p-6 md:p-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+        <div className="flex-1">
           <h2 className="text-3xl font-bold text-white tracking-tight">Access Points</h2>
-          <p className="text-zinc-400 mt-1">Manage physical wireless access points and map layout.</p>
+          <div className="flex flex-wrap items-center gap-4 mt-2">
+            <div className="space-y-1">
+               <label className="text-[10px] text-zinc-500 uppercase font-bold ml-1">By Type</label>
+               <select 
+                 value={filterType} 
+                 onChange={e => { setFilterType(e.target.value); setPage(1); }}
+                 className="block w-40 bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500"
+               >
+                 <option value="all">All Types</option>
+                 <option value="ap">Access Point</option>
+                 <option value="infrastructure">Backbone</option>
+               </select>
+            </div>
+            <div className="space-y-1">
+               <label className="text-[10px] text-zinc-500 uppercase font-bold ml-1">By Status</label>
+               <select 
+                 value={filterStatus} 
+                 onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
+                 className="block w-40 bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500"
+               >
+                 <option value="all">All Status</option>
+                 <option value="online">Online</option>
+                 <option value="offline">Offline</option>
+               </select>
+            </div>
+            <div className="space-y-1">
+               <label className="text-[10px] text-zinc-500 uppercase font-bold ml-1">By Router</label>
+               <select 
+                 value={filterMikrotik} 
+                 onChange={e => { setFilterMikrotik(e.target.value); setPage(1); }}
+                 className="block w-48 bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500"
+               >
+                 <option value="all">All Routers</option>
+                 {devices.map(d => (
+                   <option key={d.id} value={d.id}>{d.name}</option>
+                 ))}
+               </select>
+            </div>
+            <div className="space-y-1">
+               <label className="text-[10px] text-zinc-500 uppercase font-bold ml-1">Search</label>
+               <input 
+                 type="text"
+                 placeholder="Search name, mac, ssid..."
+                 value={searchTerm}
+                 onChange={e => setSearchTerm(e.target.value)}
+                 className="block w-48 bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-zinc-600"
+               />
+            </div>
+          </div>
         </div>
         <button 
           onClick={() => { 
@@ -126,7 +199,7 @@ export function AccessPointsView() {
             setFormData({ mikrotik_id: devices[0]?.id || '', name: '', group_label: '', lat: '', lng: '', ip_address: '' });
             setIsModalOpen(true); 
           }}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2"
+          className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 h-fit rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 whitespace-nowrap"
         >
           <Plus className="w-4 h-4" /> Add Access Point
         </button>
@@ -145,7 +218,7 @@ export function AccessPointsView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
-              {aps.map((ap) => {
+              {filteredAps.map((ap) => {
                 const isOnline = ap.status === 'online';
                 return (
                   <tr key={ap.id} className="hover:bg-zinc-800/20 transition-colors group">
@@ -176,12 +249,13 @@ export function AccessPointsView() {
                        </span>
                     </td>
                     <td className="px-6 py-4">
-                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
-                         isOnline ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                       }`}>
-                         <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-                         {isOnline ? 'ONLINE' : 'OFFLINE'}
-                       </span>
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                          isOnline ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                        }`} title={ap.last_error ? `Error: ${ap.last_error}` : undefined}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                          {isOnline ? 'ONLINE' : 'OFFLINE'}
+                          {ap.last_error && <AlertCircle className="w-3 h-3 text-rose-400 ml-0.5" />}
+                        </span>
                     </td>
                     <td className="px-6 py-4 text-right space-x-2">
                        <button onClick={() => {
