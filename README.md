@@ -214,4 +214,20 @@ sudo certbot --nginx -d monitoring.itats.ac.id
 
 <br>
 
+## ⚡ Tips & Troubleshooting
+
+### Bagaimana Jika File Sampah Telanjur Masuk Git?
+Jika Anda baru saja mengubah aturan di dalam `.gitignore` (misalnya agar folder `.idea`, file `.env`, atau *database* `.sqlite` diabaikan), namun file-file tersebut **sudah telanjur ter-commit di masa lalu**, maka Git akan tetap melacaknya. 
+
+Untuk memaksa Git "melupakan" file-file tersebut dan patuh pada `.gitignore` terbaru tanpa menghapus filenya dari komputer Anda, jalankan 3 perintah sakti ini di terminal Anda:
+
+```bash
+git rm -r --cached .
+git add .
+git commit -m "chore: apply new .gitignore rules and clear cache"
+```
+*Saran: Gunakan teknik ini setiap kali Anda membereskan file-file sensitif atau file build yang bocor ke repository GitHub tim Anda.*
+
+<br>
+
 © 2026 Administrator Portal Nexus - ITATS Monitoring Group.
