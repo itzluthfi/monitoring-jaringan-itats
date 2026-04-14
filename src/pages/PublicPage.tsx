@@ -29,7 +29,9 @@ export default function PublicPage({ onGoToLogin }: PublicPageProps) {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/public/status');
+      const baseUrl = import.meta.env.VITE_API_URL || '';
+      const finalUrl = baseUrl + '/api/public/status';
+      const res = await fetch(finalUrl);
       const data = await res.json();
       setStatus(data);
       setLastRefresh(new Date());

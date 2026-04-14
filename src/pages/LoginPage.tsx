@@ -29,9 +29,13 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
+      const baseUrl = import.meta.env.VITE_API_URL || '';
+      const finalUrl = baseUrl + '/api/auth/login';
+
+      const res = await fetch(finalUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();

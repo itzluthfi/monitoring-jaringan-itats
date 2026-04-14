@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NexusApp</string>
+    <string name="title_activity_main">NexusApp</string>
+    <string name="package_name">id.ac.itats.nexus</string>
+    <string name="custom_url_scheme">id.ac.itats.nexus</string>
+</resources>

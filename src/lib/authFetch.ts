@@ -44,8 +44,12 @@ export const authFetch = async (url: string, options: RequestInit = {}): Promise
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
   let response: Response;
+  const baseUrl = import.meta.env.VITE_API_URL || '';
+  const finalUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
+
   try {
-    response = await fetch(url, { ...options, headers, signal: controller.signal });
+    response = await fetch(finalUrl, { ...options, headers, signal: controller.signal });
+
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err?.name === 'AbortError') {

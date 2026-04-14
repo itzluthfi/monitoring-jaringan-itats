@@ -1,4 +1,6 @@
 import express from 'express';
+import cors from 'cors';
+import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import ping from 'ping';
@@ -56,7 +58,9 @@ process.on('unhandledRejection', (reason: any) => {
 const app = express();
 const PORT = 3000;
 
-// ── API Routes ──────────────────────────────────────────────────────────────
+// ── Global Middleware ───────────────────────────────────────────────────────
+// Izinkan Mobile App (Capacitor) atau Domain beda untuk menarik API backend.
+app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/public', publicRouter);
@@ -285,20 +289,32 @@ setInterval(async () => {
 
 // ── Vite Middleware & Start Server ──────────────────────────────────────────
 async function startServer() {
-  await initializeDB(); // Initialize MySQL DB before starting routing
+  await initializeDB();
+  app.use(cors());
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+  // Try to load Vite if we are in DEV mode. Otherwise serve statically.
+  if (process.env.NODE_ENV !== 'production' && process.env.AI_MODE !== 'true') {
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa'
+      });
+      app.use(vite.middlewares);
+      console.log('Vite middleware loaded');
+    } catch (e) {
+      console.log('Failed to start vite, falling back to static');
+    }
   } else {
-    app.use(express.static("dist"));
+    // HOSTING PRODUCTION (Web App)
+    console.log('[PROD] Serving static files from dist/');
+    app.use(express.static(path.join(process.cwd(), 'dist')));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
+    });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT} (Modular - MySQL)`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://0.0.0.0:${PORT}`);
   });
 }
 
