@@ -32,9 +32,25 @@ export const initializeDB = async () => {
     await db.query(`
       CREATE TABLE IF NOT EXISTS admin_users (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(255) UNIQUE,
-        password VARCHAR(255),
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NULL,
+        role VARCHAR(20) DEFAULT 'admin',
+        is_active TINYINT DEFAULT 1,
+        last_login TIMESTAMP NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token_hash VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used TINYINT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id)
       )
     `);
 
@@ -208,7 +224,13 @@ export const initializeDB = async () => {
       await addColumnIfMissing('mikrotik_devices', 'level', "INT DEFAULT NULL AFTER lng");
       await addColumnIfMissing('mikrotik_devices', 'driver', "VARCHAR(50) DEFAULT 'mikrotik' AFTER level");
       await addColumnIfMissing('mikrotik_devices', 'snmp_port', "INT DEFAULT 161 AFTER snmp_community");
+      // Admin users migrations
+      await addColumnIfMissing('admin_users', 'email', "VARCHAR(255) NULL AFTER password");
+      await addColumnIfMissing('admin_users', 'role', "VARCHAR(20) DEFAULT 'admin' AFTER email");
+      await addColumnIfMissing('admin_users', 'is_active', "TINYINT DEFAULT 1 AFTER role");
+      await addColumnIfMissing('admin_users', 'last_login', "TIMESTAMP NULL AFTER is_active");
       
+
       // Index check
       const [indices]: any = await db.query(
         "SHOW INDEX FROM \`${dbName}\`.mikrotik_aps WHERE Key_name = 'idx_mac'"

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Wifi, Lock, User, AlertCircle, Eye, EyeOff, Shield } from 'lucide-react';
+import { Wifi, Lock, User, AlertCircle, Eye, EyeOff, Shield, Clock, LogOut, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 
 interface LoginPageProps {
   onLogin: (token: string, username: string) => void;
@@ -12,6 +13,16 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchParams] = useSearchParams();
+  const reason = searchParams.get('reason');
+
+  const reasonBanner = reason === 'session_expired'
+    ? { icon: Clock, color: 'amber', text: 'Sesi Anda telah berakhir. Silakan login kembali.' }
+    : reason === 'logout'
+    ? { icon: LogOut, color: 'zinc', text: 'Anda telah berhasil logout.' }
+    : reason === 'unauthorized'
+    ? { icon: AlertTriangle, color: 'rose', text: 'Akses ditolak. Token tidak valid, silakan login ulang.' }
+    : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,9 +38,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       if (!res.ok || !data.token) {
         setError(data.error || 'Login gagal. Coba lagi.');
       } else {
-        localStorage.setItem('auth_token', data.token);
-        localStorage.setItem('auth_user', data.username);
-        onLogin(data.token, data.username);
+        onLogin(data.token, data.user?.username || data.username || username);
       }
     } catch {
       setError('Tidak dapat terhubung ke server.');
@@ -50,6 +59,22 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         transition={{ duration: 0.5, ease: 'easeOut' }}
         className="w-full max-w-md"
       >
+        {/* Reason banner */}
+        {reasonBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`flex items-center gap-3 p-3 mb-6 rounded-2xl ${
+              reasonBanner.color === 'amber' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+              : reasonBanner.color === 'rose'  ? 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+              : 'bg-zinc-800/60 border border-zinc-700/50 text-zinc-400'
+            }`}
+          >
+            <reasonBanner.icon className="w-4 h-4 flex-shrink-0" />
+            <p className="text-xs">{reasonBanner.text}</p>
+          </motion.div>
+        )}
+
         {/* Logo & Title */}
         <div className="text-center mb-10">
           <div className="flex justify-center mb-4">

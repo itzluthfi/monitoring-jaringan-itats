@@ -15,6 +15,7 @@ import { logsRouter } from './routes/logs.route';
 import { settingsRouter } from './routes/settings.route';
 import { adapterRouter } from './routes/adapter.route';
 import { controllersRouter } from './routes/controllers.route';
+import { adminsRouter } from './routes/admins.route';
 import { requireAuth } from './middleware/auth';
 
 dotenv.config();
@@ -70,6 +71,9 @@ app.use("/api/logs", requireAuth, logsRouter);
 app.use("/api/settings", requireAuth, settingsRouter);
 app.use("/api/adapters", requireAuth, adapterRouter);
 app.use("/api/controllers", requireAuth, controllersRouter);
+// Admins CRUD + forgot/reset password (forgot-password tidak butuh auth)
+app.use("/api/admins", adminsRouter);
+
 
 // ── Background Jobs ─────────────────────────────────────────────────────────
 
@@ -108,6 +112,27 @@ setInterval(async () => {
 const deviceLastStatus: Record<number, string> = {};
 const apLastStatus: Record<number, string> = {};
 
+async function sendTelegramAlert(title: string, message: string, isCritical: boolean) {
+  try {
+     const [tkResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_bot_token'");
+     const [cdResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_chat_id'");
+     const token = tkResult[0]?.key_value;
+     const chatId = cdResult[0]?.key_value;
+     if (!token || !chatId) return;
+
+     const emoji = isCritical ? '🔴 <b>CRITICAL ALERT</b>' : '🟢 <b>RECOVERY</b>';
+     const text = `${emoji}\n\n<b>${title}</b>\n${message}`;
+     
+     // fire and forget fetch
+     fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+     }).catch(e => console.error("[Telegram] Error:", e));
+
+  } catch(e) {}
+}
+
 // Background ICMP Ping (For Online/Offline Status)
 setInterval(async () => {
   if (process.env.MIKROTIK_SIMULATION_MODE === "true") return;
@@ -123,21 +148,18 @@ setInterval(async () => {
       const prev = deviceLastStatus[device.id];
       if (prev !== undefined && prev !== newStatus) {
         const isOffline = newStatus === 'offline';
+        const type = isOffline ? 'critical' : 'info';
+        const title = isOffline ? `Router Down: ${device.name}` : `Router Up: ${device.name}`;
+        const message = isOffline
+              ? `MikroTik "${device.name}" (${device.host}) tidak merespons. Status: ${res.output || 'Timeout'}`
+              : `MikroTik "${device.name}" (${device.host}) kembali normal.`;
+
         await db.query(
           `INSERT INTO notifications (device_id, device_name, type, title, message, action_url, entity_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            device.id,
-            device.name,
-            isOffline ? 'critical' : 'info',
-            isOffline ? `Router Down: ${device.name}` : `Router Up: ${device.name}`,
-            isOffline
-              ? `MikroTik "${device.name}" (${device.host}) tidak merespons. Status: ${res.output || 'Timeout'}`
-              : `MikroTik "${device.name}" (${device.host}) kembali normal.`,
-            `/admin/devices?detail=${device.id}`, // Custom deep link
-            'mikrotik'
-          ]
+          [ device.id, device.name, type, title, message, `/admin/devices?detail=${device.id}`, 'mikrotik' ]
         );
         
+        sendTelegramAlert(title, message, isOffline);
         await db.query(
           `INSERT INTO device_uptime_logs (node_id, node_name, status, entity_type) VALUES (?, ?, ?, ?)`,
           [`router-${device.id}`, device.name, newStatus, 'mikrotik']
@@ -155,20 +177,18 @@ setInterval(async () => {
       const prev = apLastStatus[ap.id];
       if (prev !== undefined && prev !== newStatus) {
         const isOffline = newStatus === 'offline';
+        const type = isOffline ? 'warning' : 'info';
+        const title = isOffline ? `AP Down: ${ap.name}` : `AP Up: ${ap.name}`;
+        const message = isOffline
+              ? `Access Point "${ap.name}" di ${ap.group_label || 'Lokasi'} (${ap.ip_address}) terdeteksi mati. Status: ${res.output || 'RTO'}`
+              : `Access Point "${ap.name}" kembali melayani client.`;
+
         await db.query(
           `INSERT INTO notifications (device_id, device_name, type, title, message, action_url, entity_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            ap.mikrotik_id, 
-            ap.name,
-            isOffline ? 'warning' : 'info',
-            isOffline ? `AP Down: ${ap.name}` : `AP Up: ${ap.name}`,
-            isOffline
-              ? `Access Point "${ap.name}" di ${ap.group_label || 'Lokasi'} (${ap.ip_address}) terdeteksi mati. Status: ${res.output || 'RTO'}`
-              : `Access Point "${ap.name}" kembali melayani client.`,
-            '/admin/aps', // Redirect to AP management
-            'ap'
-          ]
+          [ ap.mikrotik_id, ap.name, type, title, message, '/admin/aps', 'ap' ]
         );
+
+        sendTelegramAlert(title, message, isOffline);
 
         await db.query(`UPDATE mikrotik_aps SET status = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?`, [newStatus, ap.id]);
 

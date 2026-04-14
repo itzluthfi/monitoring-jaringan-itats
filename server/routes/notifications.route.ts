@@ -18,9 +18,13 @@ notificationsRouter.get('/', requireAuth, async (req, res) => {
     const [[countResult]]: any = await db.query("SELECT COUNT(*) as total FROM notifications");
     const total = countResult?.total || 0;
 
+    const [[unreadResult]]: any = await db.query("SELECT COUNT(*) as unread FROM notifications WHERE is_read = 0");
+    const unreadCount = unreadResult?.unread || 0;
+
     res.json({
       data: rows,
       total,
+      unreadCount,
       page,
       limit,
       totalPages: Math.ceil(total / limit)

@@ -4,11 +4,11 @@ import { requireAuth } from '../middleware/auth';
 
 export const settingsRouter = Router();
 
-// Get specific setting
+// Get specific setting — return null value jika belum pernah dibuat (bukan 404)
 settingsRouter.get('/:key', requireAuth, async (req, res) => {
   try {
     const [rows]: any = await db.query('SELECT key_value FROM system_settings WHERE key_name = ?', [req.params.key]);
-    if (rows.length === 0) return res.status(404).json({ error: "Setting not found" });
+    if (rows.length === 0) return res.json({ value: null }); // Belum ada, tapi bukan error
     res.json({ value: rows[0].key_value });
   } catch (err) {
     res.status(500).json({ error: String(err) });

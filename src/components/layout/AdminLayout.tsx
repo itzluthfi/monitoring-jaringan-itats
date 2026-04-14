@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import React, { useState, useRef, useCallback } from 'react';
+import { Outlet } from 'react-router-dom';
 import { Sidebar } from '../Sidebar';
 import { Bell, Menu, AlertTriangle } from 'lucide-react';
 import { authFetch } from '../../lib/authFetch';
@@ -13,18 +13,63 @@ interface AdminLayoutProps {
 export function AdminLayout({ onLogout }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(localStorage.getItem('sidebar_collapsed') === 'true');
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [globalUnreadCount, setGlobalUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [lastSeenId, setLastSeenId] = useState<number>(-1);
+  const lastSeenIdRef = useRef<number>(parseInt(sessionStorage.getItem('last_seen_notification_id') || '-1'));
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   
+  let authUser = localStorage.getItem('auth_user');
+  if (!authUser || authUser === 'undefined') authUser = 'System Admin';
+  const authToken = localStorage.getItem('auth_token');
+
+  const [notificationSoundUrl, setNotificationSoundUrl] = useState<string | null>(null);
+
   // Audio for notifications
   const playNotificationSound = () => {
-    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    const audio = new Audio(notificationSoundUrl || 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
     audio.play().catch(e => console.log('Audio play blocked by browser policy until user interaction.'));
   };
 
+  // Fetch custom notification sound configuration on mount
+  React.useEffect(() => {
+    if (!authToken) return;
+    authFetch('/api/settings/notification_sounds')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.value) {
+           const sounds = JSON.parse(data.value);
+           const active = sounds.find((s: any) => s.isActive);
+           if (active && active.url) setNotificationSoundUrl(active.url);
+        }
+      })
+      .catch(() => {}); // It's fine if not configured yet
+  }, [authToken]);
+
+  // ── Background Token Expiry Check (setiap 60 detik) ──────────────────────
+  React.useEffect(() => {
+    if (!authToken) return;
+    const checkToken = () => {
+      try {
+        const payload = JSON.parse(atob(authToken.split('.')[1]));
+        if (payload?.exp && Date.now() >= payload.exp * 1000) {
+          // Token expired → paksa logout
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('auth_user');
+          sessionStorage.removeItem('last_seen_notification_id');
+          window.location.replace('/login?reason=session_expired');
+        }
+      } catch {
+        // Token corrupt / tidak bisa dibaca → logout
+        localStorage.removeItem('auth_token');
+        window.location.replace('/login?reason=unauthorized');
+      }
+    };
+    checkToken(); // cek langsung saat mount
+    const tokenInterval = setInterval(checkToken, 60_000);
+    return () => clearInterval(tokenInterval);
+  }, [authToken]);
 
   // Sync theme to document
   React.useEffect(() => {
@@ -39,62 +84,75 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
     localStorage.setItem('sidebar_collapsed', String(newState));
   };
 
-  let authUser = localStorage.getItem('auth_user');
-  if (!authUser || authUser === 'undefined') authUser = 'System Admin';
-  const authToken = localStorage.getItem('auth_token');
-
-  // Load notifications periodically
+  // (Dipindahkan ke atas komponen AdminLayout)
   React.useEffect(() => {
+    let isMounted = true;
     if (!authToken) return;
-    const fetchNotifications = () => {
-      authFetch('/api/notifications')
-        .then(res => res.json())
-        .then(response => {
-          // The API returns { data: [...], total: ... }
-          const data = response.data || response;
-          if (Array.isArray(data)) {
-            setNotifications(data);
-            
-            if (data.length > 0) {
-              const latestIdInFetch = Math.max(...data.map(n => n.id));
-              
-              // If lastSeenId is -1, this is the FIRST fetch. 
-              // We just set the baseline without showing alerts for old history.
-              if (lastSeenId === -1) {
-                setLastSeenId(latestIdInFetch);
-                return;
-              }
+    const fetchNotifications = async () => {
+      try {
+        const res = await authFetch('/api/notifications');
+        if (!isMounted) return;
+        const response = await res.json();
+        const data = response.data || response;
+        if (!Array.isArray(data)) return;
+        setNotifications(data);
+        if (response.unreadCount !== undefined) setGlobalUnreadCount(response.unreadCount);
 
-              // Only show alerts for notifications NEWER than our last known ID
-              if (lastSeenId >= 0 && latestIdInFetch > lastSeenId) {
-                const newNotifs = data.filter((n: Notification) => n.id > lastSeenId);
-                
-                if (newNotifs.length > 0) {
-                  playNotificationSound();
+        if (data.length > 0) {
+          const latestIdInFetch = Math.max(...data.map((n: any) => n.id));
+          const previousLastSeenId = lastSeenIdRef.current;
+
+          if (previousLastSeenId === -1) {
+            lastSeenIdRef.current = latestIdInFetch;
+            sessionStorage.setItem('last_seen_notification_id', String(latestIdInFetch));
+            return;
+          }
+
+          if (latestIdInFetch > previousLastSeenId) {
+            const newNotifs = data.filter((n: any) => n.id > previousLastSeenId);
+            if (newNotifs.length > 0) {
+              playNotificationSound();
                   
-                  newNotifs.forEach((n: Notification) => {
-                    const isCritical = n.type === 'critical' || n.type === 'error';
+                  if (newNotifs.length >= 3) {
+                    // Logic Aggregation (Pengelompokan Notifikasi)
+                    const upCount = newNotifs.filter((n: Notification) => n.title.toUpperCase().includes(' UP')).length;
+                    const downCount = newNotifs.filter((n: Notification) => n.title.toUpperCase().includes(' DOWN') || n.title.toUpperCase().includes('OFFLINE')).length;
+                    const criticalCount = newNotifs.filter((n: Notification) => n.type === 'critical' || n.type === 'error').length;
+                    const otherCount = newNotifs.length - upCount - downCount;
+                    
+                    const isCritical = criticalCount > 0 || downCount > 0;
+                    
+                    let summaryMessage = `Mendeteksi ${newNotifs.length} aktivitas jaringan bersamaan. `;
+                    const details = [];
+                    if (downCount > 0) details.push(`${downCount} perangkat OFFLINE`);
+                    if (upCount > 0) details.push(`${upCount} perangkat ONLINE`);
+                    if (otherCount > 0) details.push(`${otherCount} log sistem lainnya`);
+                    
+                    if (details.length > 0) {
+                      summaryMessage += "\nRincian: " + details.join(', ') + '.';
+                    }
 
                     toast.custom((t) => (
                       <div className={`${t.visible ? 'animate-in slide-in-from-top-5 fade-in duration-300' : 'animate-out slide-out-to-top-5 fade-out duration-300'} max-w-sm w-full bg-zinc-900 border ${isCritical ? 'border-red-500/50 shadow-red-500/10' : 'border-indigo-500/50 shadow-indigo-500/10'} shadow-2xl rounded-2xl pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5 relative overflow-hidden`}>
                         <div className="flex-1 w-0 p-4">
                           <div className="flex items-start">
                             <div className={`flex-shrink-0 pt-0.5 ${isCritical ? 'text-red-400' : 'text-indigo-400'}`}>
-                              <Bell className="h-6 w-6" />
+                              {isCritical ? <AlertTriangle className="h-6 w-6" /> : <Bell className="h-6 w-6" />}
                             </div>
                             <div className="ml-3 flex-1">
-                              <p className="text-sm font-bold text-white uppercase tracking-wider">{n.title}</p>
-                              <p className="mt-1 text-sm text-zinc-400 leading-relaxed line-clamp-2">{n.message}</p>
+                              <p className={`text-sm font-bold uppercase tracking-wider ${isCritical ? 'text-red-400' : 'text-indigo-400'}`}>
+                                MULTIPLE NETWORK EVENTS
+                              </p>
+                              <p className="mt-1 text-sm text-zinc-300 leading-relaxed">{summaryMessage}</p>
                               <div className="mt-3 flex gap-2">
                                  <button 
                                    onClick={() => {
-                                      authFetch(`/api/notifications/${n.id}/read`, { method: 'POST' });
                                       toast.dismiss(t.id);
-                                      if (n.action_url) window.location.href = n.action_url;
+                                      setShowNotifications(true); // Membuka panel notifikasi samping
                                    }}
-                                   className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
+                                   className={`px-3 py-1.5 text-white text-[10px] font-bold rounded-lg transition-colors shadow-lg ${isCritical ? 'bg-red-600 hover:bg-red-500 shadow-red-500/20' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20'}`}
                                  >
-                                   Lihat Sekarang
+                                   Lihat Rincian di Panel
                                  </button>
                                  <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-bold rounded-lg transition-colors">
                                    Abaikan
@@ -106,38 +164,80 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
                         {/* Progress Bar */}
                         <div 
                           className={`absolute bottom-0 left-0 h-1 ${isCritical ? 'bg-red-500' : 'bg-indigo-500'} animate-toast-progress`}
-                          style={{ animationDuration: '3500ms', animationTimingFunction: 'linear' }}
+                          style={{ animationDuration: '6000ms', animationTimingFunction: 'linear' }}
                         />
                       </div>
-                    ), { duration: 3500, position: 'top-center' });
-                  });
-                }
-                setLastSeenId(latestIdInFetch);
-              }
+                    ), { duration: 6000, position: 'top-center' });
+                    
+                  } else {
+                    // Logic Normal (< 3 notifikasi)
+                    newNotifs.forEach((n: Notification) => {
+                      const isCritical = n.type === 'critical' || n.type === 'error';
+
+                      toast.custom((t) => (
+                        <div className={`${t.visible ? 'animate-in slide-in-from-top-5 fade-in duration-300' : 'animate-out slide-out-to-top-5 fade-out duration-300'} max-w-sm w-full bg-zinc-900 border ${isCritical ? 'border-red-500/50 shadow-red-500/10' : 'border-indigo-500/50 shadow-indigo-500/10'} shadow-2xl rounded-2xl pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5 relative overflow-hidden`}>
+                          <div className="flex-1 w-0 p-4">
+                            <div className="flex items-start">
+                              <div className={`flex-shrink-0 pt-0.5 ${isCritical ? 'text-red-400' : 'text-indigo-400'}`}>
+                                <Bell className="h-6 w-6" />
+                              </div>
+                              <div className="ml-3 flex-1">
+                                <p className="text-sm font-bold text-white uppercase tracking-wider">{n.title}</p>
+                                <p className="mt-1 text-sm text-zinc-400 leading-relaxed line-clamp-2">{n.message}</p>
+                                <div className="mt-3 flex gap-2">
+                                   <button 
+                                     onClick={() => {
+                                        authFetch(`/api/notifications/${n.id}/read`, { method: 'POST' });
+                                        toast.dismiss(t.id);
+                                        if (n.action_url) window.location.href = n.action_url;
+                                     }}
+                                     className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
+                                   >
+                                     Lihat Sekarang
+                                   </button>
+                                   <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-bold rounded-lg transition-colors">
+                                     Abaikan
+                                   </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          {/* Progress Bar */}
+                          <div 
+                            className={`absolute bottom-0 left-0 h-1 ${isCritical ? 'bg-red-500' : 'bg-indigo-500'} animate-toast-progress`}
+                            style={{ animationDuration: '3500ms', animationTimingFunction: 'linear' }}
+                          />
+                        </div>
+                      ), { duration: 3500, position: 'top-center' });
+                    });
+                  }
+
+                  lastSeenIdRef.current = latestIdInFetch;
+                  sessionStorage.setItem('last_seen_notification_id', String(latestIdInFetch));
             }
           }
-        })
-        .catch(console.error);
+        }
+      } catch (err: any) {
+        if (err?.status !== 401 && err?.status !== 403) {
+          console.warn('[Notifications] Polling error:', err?.message || err);
+        }
+      }
     };
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 10000);
+    const interval = setInterval(fetchNotifications, 10_000);
+
 
     const handleUpdate = () => fetchNotifications();
     window.addEventListener('notifications-changed', handleUpdate);
 
     return () => {
+      isMounted = false;
       clearInterval(interval);
       window.removeEventListener('notifications-changed', handleUpdate);
     };
-  }, [authToken, lastSeenId]);
+  }, [authToken]);
 
-
-
-  if (!authToken) {
-    return <Navigate to="/login" replace />;
-  }
-
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const unreadCount = globalUnreadCount;
 
   return (
     <div className={`flex h-screen overflow-hidden bg-zinc-950 text-zinc-300 selection:bg-indigo-500/30`}>
@@ -150,7 +250,7 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
         setTheme={setTheme}
         onLogout={() => setIsLogoutModalOpen(true)}
         authUser={authUser}
-        unreadCount={unreadCount}
+        unreadCount={globalUnreadCount}
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300 ease-in-out">

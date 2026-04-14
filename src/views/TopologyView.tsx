@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Network, Server, Monitor, Router as RouterIcon,
   Wifi, X, Signal, Users, Clock, Radio,
-  CheckCircle, XCircle, AlertCircle, Maximize, Minimize, ChevronRight, HelpCircle, ChevronUp, ChevronDown
+  CheckCircle, XCircle, AlertCircle, Maximize, Minimize, ChevronRight, HelpCircle, ChevronUp, ChevronDown, Filter
 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
@@ -179,8 +179,8 @@ function RouterColumn({ router, selectedNode, onSelect }: {
       {/* AP Grid — max 6 per row */}
       {apNodes.length > 0 && (
         <div className="flex flex-wrap justify-center gap-2 max-w-[700px]">
-          {apNodes.map(ap => (
-            <div key={`${router.id}-${ap.id}`} className="flex flex-col items-center">
+          {apNodes.map((ap, idx) => (
+            <div key={`${router.id}-${ap.id}-${idx}`} className="flex flex-col items-center">
               <div className="w-px h-3 bg-zinc-700/40" />
               <APCard
                 node={ap}
@@ -255,17 +255,26 @@ function DetailPanel({ node, topology, onClose }: {
   }, [node.id, topology, isRouter]);
 
   return (
-    <div style={{ width: `${width}px` }} className="bg-zinc-950 border-l border-zinc-800 flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 relative flex-shrink-0">
-      <div onMouseDown={startResizing} className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-indigo-500/50 z-20" />
-      <div className="p-4 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4">
+    <div 
+      style={{ width: `${width}px`, maxWidth: 'calc(100vw - 3rem)' }}
+      className="bg-zinc-950 flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 relative flex-shrink-0 border-l border-zinc-800 z-[150] max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:shadow-2xl max-md:h-full"
+    >
+      <div onMouseDown={startResizing} className="absolute left-0 top-0 bottom-0 w-2 md:w-1.5 cursor-ew-resize hover:bg-indigo-500/50 z-20" />
+      <div className="p-4 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 bg-zinc-900/40 md:bg-transparent shadow-md md:shadow-none">
+        <div className="flex flex-wrap items-center gap-3 md:gap-4">
           <h3 className="font-bold text-white text-sm">Node Details</h3>
-          <div className="flex bg-zinc-900 rounded-lg p-1">
-             <button onClick={() => setActiveTab('details')} className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${activeTab==='details'?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300'}`}>Details</button>
-             <button onClick={() => setActiveTab('logs')} className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${activeTab==='logs'?'bg-indigo-600 text-white':'text-zinc-500 hover:text-zinc-300'}`}>Logs</button>
+          <div className="flex bg-zinc-900 border border-zinc-800 rounded-lg p-1">
+             <button onClick={() => setActiveTab('details')} className={`px-2.5 py-1.5 text-xs font-bold rounded-md transition-colors ${activeTab==='details'?'bg-zinc-800 text-white shadow-sm':'text-zinc-500 hover:text-zinc-300'}`}>Details</button>
+             <button onClick={() => setActiveTab('logs')} className={`px-2.5 py-1.5 text-xs font-bold rounded-md transition-colors ${activeTab==='logs'?'bg-indigo-600 text-white shadow-sm':'text-zinc-500 hover:text-zinc-300'}`}>Logs</button>
           </div>
         </div>
-        <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors p-1"><X className="w-4 h-4" /></button>
+        <button 
+          onClick={onClose} 
+          className="p-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 hover:border-red-500/60 text-red-500 hover:text-red-400 rounded-xl transition-all shadow-lg shadow-red-500/10 group"
+          title="Tutup Panel"
+        >
+          <X className="w-5 h-5 md:w-4 md:h-4 group-hover:scale-110 transition-transform" />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -474,6 +483,7 @@ export function TopologyView() {
   const [topologySearch, setTopologySearch] = useState('');
   const [searchMatches, setSearchMatches] = useState<TopologyNode[]>([]);
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
+  const [showFilterModal, setShowFilterModal] = useState(false);
 
   // Search logic
   const handleSearch = (term: string) => {
@@ -684,49 +694,63 @@ export function TopologyView() {
 
         {/* ── Toggle Filter Row ──────────────────────────────────────────────── */}
         {allRouters.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold mr-1">Filter:</span>
-            {/* "All" toggle */}
-            <button
-              onClick={() => toggleRouter('all')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 border
-                ${activeRouters.has('all')
-                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/30'
-                  : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'
-                }`}
-            >
-              <Network className="w-3 h-3" /> Semua
-            </button>
+          <>
+            {/* Desktop Filter */}
+            <div className="hidden md:flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold mr-1">Filter:</span>
+              {/* "All" toggle */}
+              <button
+                onClick={() => toggleRouter('all')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 border
+                  ${activeRouters.has('all')
+                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                    : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'
+                  }`}
+              >
+                <Network className="w-3 h-3" /> Semua
+              </button>
 
-            {/* Per-router toggle buttons */}
-            {allRouters.map(router => {
-              const isOn = activeRouters.has(router.id);
-              const rc = getStatusColors(router.status);
-              const apCount = router.children?.[0]?.children?.length || 0;
-              const clients = router.children?.[0]?.children?.reduce((s: number, a: TopologyNode) => s + (a.clients || 0), 0) || 0;
-              return (
-                <button
-                  key={router.id}
-                  onClick={() => toggleRouter(router.id)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 border
-                    ${isOn
-                      ? 'bg-zinc-800 border-indigo-500/70 text-white shadow-md'
-                      : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'
-                    }`}
-                >
-                  {/* Status dot */}
-                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${router.status === 'online' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                  <span className="truncate max-w-[140px]">{router.name}</span>
-                  {isOn && (
-                    <span className="flex items-center gap-2 text-[9px] text-zinc-400 ml-1">
-                      <span className="text-violet-400">{apCount} seg</span>
-                      <span className="text-emerald-400">{clients} usr</span>
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+              {/* Per-router toggle buttons */}
+              {allRouters.map(router => {
+                const isOn = activeRouters.has(router.id);
+                const rc = getStatusColors(router.status);
+                const apCount = router.children?.[0]?.children?.length || 0;
+                const clients = router.children?.[0]?.children?.reduce((s: number, a: TopologyNode) => s + (a.clients || 0), 0) || 0;
+                return (
+                  <button
+                    key={router.id}
+                    onClick={() => toggleRouter(router.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 border
+                      ${isOn
+                        ? 'bg-zinc-800 border-indigo-500/70 text-white shadow-md'
+                        : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'
+                      }`}
+                  >
+                    {/* Status dot */}
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${router.status === 'online' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                    <span className="truncate max-w-[140px]">{router.name}</span>
+                    {isOn && (
+                      <span className="flex items-center gap-2 text-[9px] text-zinc-400 ml-1">
+                        <span className="text-violet-400">{apCount} seg</span>
+                        <span className="text-emerald-400">{clients} usr</span>
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Mobile Filter Button */}
+            <div className="md:hidden w-full pt-1">
+              <button 
+                onClick={() => setShowFilterModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 hover:border-zinc-600 text-zinc-200 rounded-xl font-bold shadow-sm transition-all"
+              >
+                <Filter className="w-4 h-4" />
+                Filter Mikrotik {activeRouters.has('all') ? '(Semua)' : `(${activeRouters.size} Dipilih)`}
+              </button>
+            </div>
+          </>
         )}
       </div>
 
@@ -873,6 +897,78 @@ export function TopologyView() {
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile Filter Modal ──────────────────────────────────────────────── */}
+      {showFilterModal && (
+        <div className="fixed md:hidden inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-end justify-center sm:items-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-zinc-950 border-t sm:border border-zinc-800 rounded-t-3xl sm:rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-8 sm:slide-in-from-bottom-0">
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+              <h3 className="font-bold text-white flex items-center gap-2"><Filter className="w-5 h-5 text-indigo-400" /> Filter Mikrotik</h3>
+              <button onClick={() => setShowFilterModal(false)} className="text-zinc-500 hover:text-white p-1 rounded-lg bg-zinc-800/50 hover:bg-zinc-700 transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-2">
+              <button
+                onClick={() => toggleRouter('all')}
+                className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200
+                  ${activeRouters.has('all') 
+                    ? 'bg-indigo-500/10 border-indigo-500/50 text-indigo-300' 
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${activeRouters.has('all') ? 'bg-indigo-500/20 text-indigo-400' : 'bg-zinc-800 text-zinc-500'}`}>
+                    <Network className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-sm">Tampilkan Semua</p>
+                    <p className="text-[10px] opacity-70">Lihat seluruh topologi jaringan</p>
+                  </div>
+                </div>
+                {activeRouters.has('all') && <CheckCircle className="w-5 h-5 text-indigo-400" />}
+              </button>
+              
+              <div className="w-full h-px bg-zinc-800/50 my-1" />
+              
+              {allRouters.map(router => {
+                const isOn = activeRouters.has(router.id);
+                const apCount = router.children?.[0]?.children?.length || 0;
+                const clients = router.children?.[0]?.children?.reduce((s: number, a: TopologyNode) => s + (a.clients || 0), 0) || 0;
+                return (
+                  <button
+                    key={router.id}
+                    onClick={() => toggleRouter(router.id)}
+                    className={`flex items-center justify-between p-3 rounded-xl border transition-all duration-200
+                      ${isOn
+                        ? 'bg-zinc-900 border-zinc-700 text-white shadow-sm'
+                        : 'bg-zinc-950 border-zinc-800/50 text-zinc-500 hover:border-zinc-700'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${router.status === 'online' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                      <div className="text-left">
+                        <p className={`font-bold text-sm ${isOn ? 'text-zinc-100' : 'text-zinc-400'}`}>{router.name}</p>
+                        <p className={`text-[10px] ${isOn ? 'text-zinc-400' : 'text-zinc-600'}`}>{apCount} segmen, {clients} users</p>
+                      </div>
+                    </div>
+                    {/* Toggle Switch */}
+                    <div className={`w-10 h-5.5 rounded-full relative transition-colors ${isOn ? 'bg-indigo-500' : 'bg-zinc-800'}`}>
+                      <div className={`w-4.5 h-4.5 rounded-full bg-white absolute top-0.5 transition-transform ${isOn ? 'translate-x-5' : 'translate-x-0.5'} shadow-sm`} />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            
+            <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
+              <button 
+                onClick={() => setShowFilterModal(false)}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors shadow-lg shadow-indigo-500/20"
+              >
+                Terapkan & Tutup
+              </button>
             </div>
           </div>
         </div>
