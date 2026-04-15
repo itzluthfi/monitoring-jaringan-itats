@@ -456,6 +456,11 @@ const getTopologyStatus = () => {
 };
 
 const upsertDiscoveredAP = async (routerId: number, ap: any): Promise<number | null> => {
+  // JANGAN simpan node yang bersifat transient (neighbor discovery / fallback segments) ke database
+  if (ap.isTransient || ap.isCoreLink) {
+    return null;
+  }
+
   // We need a unique identifier. MAC is best, ID as fallback
   const mac = ap.mac_address || ap.mac || ap.id || ap.name;
   if (!mac) return null;
@@ -659,8 +664,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
       id: 'internet', name: 'Public Internet', type: 'cloud', status: status.internet, lastUpdated: new Date().toISOString(),
       children: routerList.map((d: any) => {
         const aps = makeAPs(String(d.id));
-        // Auto-sync simulated APs to DB so they appear in /admin/aps
-        aps.forEach(ap => upsertDiscoveredAP(d.id, ap));
+        // REMOVED: aps.forEach(ap => upsertDiscoveredAP(d.id, ap));
         
         return {
           id: `router-${d.id}`, name: d.name, type: 'router', host: d.host, status: status.router,
@@ -1138,6 +1142,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                 clients: 0,
                 clientDetails: [],
                 host: n['address'] || n['ip-address'] || '-',
+                isTransient: true
               }));
 
             } else {
@@ -1192,6 +1197,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                     frequency: '-',
                     clients: leaseList.length,
                     clientDetails: clientDetailsFromDHCP,
+                    isTransient: true
                   };
                 });
               } else if (Array.isArray(neighbors) && neighbors.length > 0) {
@@ -1211,7 +1217,8 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                   frequency: '-',
                   clients: 0,
                   clientDetails: [],
-                  isCoreLink: true
+                  isCoreLink: true,
+                  isTransient: true
                 }));
               } else {
                  // ─── PATH L: Physical Interface Fallback (Last Resort) ───
@@ -1273,6 +1280,20 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
       
       // Merge: Add nodes from DB that were NOT found in the live scan (mark as offline)
       for (const dbAp of dbAPs) {
+        // Filter out ghost nodes (artifacts from neighbors or network segments)
+        // We only want to show real APs when they go offline.
+        const nameLower = (dbAp.name || '').toLowerCase();
+        const macLower = (dbAp.mac_address || '').toLowerCase();
+        const isGhost = 
+          macLower.includes('neighbor-node') || 
+          macLower.includes('segment-dhcp') || 
+          macLower.includes('iface-node') ||
+          nameLower.includes('segment-dhcp') ||
+          // nameLower === 'backbone link' ||
+          nameLower === 'core link';
+
+        if (isGhost) continue;
+
         const dbKey = `${(dbAp.name || '').toLowerCase().trim()}|${device.id}`;
         if (!liveNames.has(dbKey)) {
           // If the DB says it's online, but it's not found now, it just went OFF!
@@ -1317,10 +1338,22 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
             name: `Core Switch - ${device.name}`,
             type: 'switch',
             status: routerOnline ? 'online' : 'offline',
-            children: accessPoints.map(ap => ({
-              ...ap,
-              status: routerOnline ? ap.status : 'offline'
-            }))
+            children: accessPoints
+              .filter(ap => {
+                // AGGRESSIVE FILTER: 
+                // Hide transient nodes (neighbors/segments) if they are just clutter
+                if (ap.isTransient) {
+                  const ssid = String(ap.ssid || '').toLowerCase();
+                  if (ssid === '-' || ssid === '' || ssid === 'unknown' || ssid.includes('core link')) {
+                    return false; // Skip empty transient nodes
+                  }
+                }
+                return true;
+              })
+              .map(ap => ({
+                ...ap,
+                status: routerOnline ? ap.status : 'offline'
+              }))
           }
         ]
       };

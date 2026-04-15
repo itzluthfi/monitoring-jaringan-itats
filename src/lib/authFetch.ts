@@ -13,8 +13,8 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 // Endpoint-endpoint yang butuh waktu lebih lama (koneksi ke banyak MikroTik)
 const EXTENDED_TIMEOUT_MAP: Record<string, number> = {
-  '/api/topology/dynamic': 90_000,   // banyak router parallel = bisa 40-80s
-  '/api/topology/clients/all': 90_000,
+  '/api/topology/dynamic': 180_000,   // ditingkatkan jadi 3 menit (sebelumnya 90s)
+  '/api/topology/clients/all': 180_000,
   '/api/prediction': 30_000,
   '/api/current-status': 25_000,
 };

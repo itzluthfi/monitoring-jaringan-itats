@@ -115,7 +115,9 @@ setInterval(async () => {
 
 // Device status tracking for notification generation
 const deviceLastStatus: Record<number, string> = {};
+const deviceFailCount: Record<number, number> = {};
 const apLastStatus: Record<number, string> = {};
+const apFailCount: Record<number, number> = {};
 
 async function sendTelegramAlert(title: string, message: string, isCritical: boolean) {
   try {
@@ -147,17 +149,37 @@ setInterval(async () => {
     for (const device of devices) {
       if (!device.host) continue;
       const res = await ping.promise.probe(device.host, { timeout: 2 });
-      const newStatus = res.alive ? 'online' : 'offline';
-      await db.query("UPDATE mikrotik_devices SET status = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?", [newStatus, device.id]);
+      
+      const isAlive = res.alive;
+      const prevStatus = deviceLastStatus[device.id] || device.status || 'online';
+      let newStatus = prevStatus;
 
-      const prev = deviceLastStatus[device.id];
-      if (prev !== undefined && prev !== newStatus) {
+      if (isAlive) {
+        deviceFailCount[device.id] = 0;
+        newStatus = 'online';
+      } else {
+        deviceFailCount[device.id] = (deviceFailCount[device.id] || 0) + 1;
+        // Hanya anggap offline jika gagal 3 kali berturut-turut (30 detik)
+        if (deviceFailCount[device.id] >= 3) {
+          newStatus = 'offline';
+        }
+      }
+
+      // Selalu update last_seen jika hidup
+      if (isAlive) {
+        await db.query("UPDATE mikrotik_devices SET last_seen = CURRENT_TIMESTAMP WHERE id = ?", [device.id]);
+      }
+
+      if (prevStatus !== newStatus) {
         const isOffline = newStatus === 'offline';
         const type = isOffline ? 'critical' : 'info';
         const title = isOffline ? `Router Down: ${device.name}` : `Router Up: ${device.name}`;
         const message = isOffline
-              ? `MikroTik "${device.name}" (${device.host}) tidak merespons. Status: ${res.output || 'Timeout'}`
+              ? `MikroTik "${device.name}" (${device.host}) tidak merespons setelah 3 kali percobaan. Status: ${res.output || 'Timeout'}`
               : `MikroTik "${device.name}" (${device.host}) kembali normal.`;
+
+        // Update database status
+        await db.query("UPDATE mikrotik_devices SET status = ? WHERE id = ?", [newStatus, device.id]);
 
         await db.query(
           `INSERT INTO notifications (device_id, device_name, type, title, message, action_url, entity_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -177,16 +199,34 @@ setInterval(async () => {
     const [aps]: any = await db.query("SELECT * FROM mikrotik_aps WHERE ip_address IS NOT NULL");
     for (const ap of aps) {
       const res = await ping.promise.probe(ap.ip_address, { timeout: 2 });
-      const newStatus = res.alive ? 'online' : 'offline';
+      const isAlive = res.alive;
+      const prevStatus = apLastStatus[ap.id] || ap.status || 'online';
+      let newStatus = prevStatus;
 
-      const prev = apLastStatus[ap.id];
-      if (prev !== undefined && prev !== newStatus) {
+      if (isAlive) {
+        apFailCount[ap.id] = 0;
+        newStatus = 'online';
+      } else {
+        apFailCount[ap.id] = (apFailCount[ap.id] || 0) + 1;
+        if (apFailCount[ap.id] >= 3) {
+          newStatus = 'offline';
+        }
+      }
+
+      if (isAlive) {
+        await db.query("UPDATE mikrotik_aps SET last_seen = CURRENT_TIMESTAMP WHERE id = ?", [ap.id]);
+      }
+
+      if (prevStatus !== newStatus) {
         const isOffline = newStatus === 'offline';
         const type = isOffline ? 'warning' : 'info';
         const title = isOffline ? `AP Down: ${ap.name}` : `AP Up: ${ap.name}`;
         const message = isOffline
-              ? `Access Point "${ap.name}" di ${ap.group_label || 'Lokasi'} (${ap.ip_address}) terdeteksi mati. Status: ${res.output || 'RTO'}`
+              ? `Access Point "${ap.name}" di ${ap.group_label || 'Lokasi'} (${ap.ip_address}) terdeteksi mati setelah 3 kali percobaan.`
               : `Access Point "${ap.name}" kembali melayani client.`;
+
+        // Update DB status
+        await db.query(`UPDATE mikrotik_aps SET status = ? WHERE id = ?`, [newStatus, ap.id]);
 
         await db.query(
           `INSERT INTO notifications (device_id, device_name, type, title, message, action_url, entity_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -194,8 +234,6 @@ setInterval(async () => {
         );
 
         sendTelegramAlert(title, message, isOffline);
-
-        await db.query(`UPDATE mikrotik_aps SET status = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?`, [newStatus, ap.id]);
 
         await db.query(
           `INSERT INTO device_uptime_logs (node_id, node_name, status, entity_type) VALUES (?, ?, ?, ?)`,
