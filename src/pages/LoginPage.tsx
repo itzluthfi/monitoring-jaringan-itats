@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wifi, Lock, User, AlertCircle, Eye, EyeOff, Shield, Clock, LogOut, AlertTriangle } from 'lucide-react';
+import { Wifi, Lock, User, AlertCircle, Eye, EyeOff, Shield, Clock, LogOut, AlertTriangle, Settings, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 
@@ -15,6 +15,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [loading, setLoading] = useState(false);
   const [searchParams] = useSearchParams();
   const reason = searchParams.get('reason');
+  
+  // ── Mobile Server Configuration ──
+  const [showServerSettings, setShowServerSettings] = useState(false);
+  const [manualApiUrl, setManualApiUrl] = useState(localStorage.getItem('API_SERVER_URL') || '');
 
   const reasonBanner = reason === 'session_expired'
     ? { icon: Clock, color: 'amber', text: 'Sesi Anda telah berakhir. Silakan login kembali.' }
@@ -29,8 +33,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setError('');
     setLoading(true);
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || '';
-      const finalUrl = baseUrl + '/api/auth/login';
+      const baseUrl = localStorage.getItem('API_SERVER_URL') || import.meta.env.VITE_API_URL || '';
+      const finalUrl = baseUrl ? `${baseUrl}/api/auth/login` : '/api/auth/login';
 
       const res = await fetch(finalUrl, {
         method: 'POST',
@@ -168,7 +172,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         </div>
 
         {/* Back to public */}
-        <p className="text-center mt-6">
+        <div className="flex flex-col items-center gap-3 mt-6">
           <button
             onClick={() => {
               window.history.pushState({}, '', '/');
@@ -178,7 +182,55 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           >
             ← Kembali ke Halaman Publik
           </button>
-        </p>
+          <button
+            onClick={() => setShowServerSettings(!showServerSettings)}
+            className="flex flex-row items-center gap-1.5 text-xs text-emerald-600/70 hover:text-emerald-500 transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5" /> Konfigurasi Server (Mobile)
+          </button>
+        </div>
+
+        {/* Server Settings Modal/Section */}
+        {showServerSettings && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="mt-4 p-4 bg-black/40 border border-emerald-500/20 rounded-2xl"
+          >
+            <p className="text-[10px] text-zinc-400 mb-2 leading-relaxed">
+              Jika menggunakan aplikasi HP (.APK), masukkan IP laptop server Anda agar HP bisa terhubung. Contoh: <code className="text-emerald-400">http://172.41.1.10:3000</code>
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={manualApiUrl}
+                onChange={e => setManualApiUrl(e.target.value)}
+                placeholder="http://ip-server:3000"
+                className="flex-1 bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50"
+              />
+              <button
+                onClick={() => {
+                  if (manualApiUrl) {
+                    // hapus slash terakhir jika ada
+                    // Pastikan awali dengan http://
+                    let url = manualApiUrl.trim().replace(/\/$/, '');
+                    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+                      url = `http://${url}`;
+                    }
+                    localStorage.setItem('API_SERVER_URL', url);
+                    setManualApiUrl(url);
+                  } else {
+                    localStorage.removeItem('API_SERVER_URL');
+                  }
+                  setShowServerSettings(false);
+                }}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl px-3 py-2 flex items-center justify-center transition-colors"
+              >
+                <Save className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
       </motion.div>
     </div>
   );

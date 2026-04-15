@@ -879,7 +879,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                 channel: ap['current-channel'] || ap.channel || '-',
                 frequency: ap['current-frequency'] || ap.frequency || '-',
                 clients: apClients.length,
-                clientDetails: apClients.slice(0, 30).map(enrichClient),
+                clientDetails: apClients.slice(0, 100).map(enrichClient),
               };
             });
 
@@ -915,7 +915,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                 channel: cap['channel'] || cap['current-channel'] || '-',
                 frequency: cap['frequency'] || cap['current-frequency'] || '-',
                 clients: apClients.length,
-                clientDetails: apClients.slice(0, 30).map(enrichClient),
+                clientDetails: apClients.slice(0, 100).map(enrichClient),
               };
             });
 
@@ -950,7 +950,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                 channel: radio['current-channel'] || radio.channel || '-',
                 frequency: radio['current-frequency'] || radio.frequency || '-',
                 clients: apClients.length,
-                clientDetails: apClients.slice(0, 30).map(enrichClient),
+                clientDetails: apClients.slice(0, 100).map(enrichClient),
               };
             });
 
@@ -984,7 +984,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                 channel: wlan['channel'] || '-',
                 frequency: wlan['frequency'] || '-',
                 clients: apClients.length,
-                clientDetails: apClients.slice(0, 30).map(enrichClient),
+                clientDetails: apClients.slice(0, 100).map(enrichClient),
               };
             });
 
@@ -1011,7 +1011,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
               channel: '-',
               frequency: '-',
               clients: clients.length,
-              clientDetails: clients.slice(0, 30).map(enrichClient),
+              clientDetails: clients.slice(0, 100).map(enrichClient),
             }));
 
           } else if (Array.isArray(wlanRegTable) && wlanRegTable.length > 0) {
@@ -1037,7 +1037,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
               channel: '-',
               frequency: '-',
               clients: clients.length,
-              clientDetails: clients.slice(0, 30).map(enrichClient),
+              clientDetails: clients.slice(0, 100).map(enrichClient),
             }));
 
           } else if (wifiV7Available) {
@@ -1069,7 +1069,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                 channel: wlan['channel'] || wlan['current-channel'] || '-',
                 frequency: wlan['frequency'] || wlan['current-frequency'] || '-',
                 clients: apClients.length,
-                clientDetails: apClients.slice(0, 30).map(enrichClient),
+                clientDetails: apClients.slice(0, 100).map(enrichClient),
               };
             });
 
@@ -1096,7 +1096,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
               channel: '-',
               frequency: '-',
               clients: clients.length,
-              clientDetails: clients.slice(0, 30).map(enrichClient),
+              clientDetails: clients.slice(0, 100).map(enrichClient),
             }));
 
           } else {
@@ -1203,7 +1203,7 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
                   id: `neighbor-node-${device.id}-${idx}`,
                   name: n.identity || n['system-name'] || n.board || 'Backbone Link',
                   type: 'ap' as const,
-                  wifiSource: 'none',
+                  wifiSource: 'Backbone',
                   status: 'online',
                   ssid: n.board || 'Core Link',
                   band: n.interface || 'Eth',
@@ -1259,9 +1259,11 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
       // ─────────────────────────────────────────────────
       
       // Mark all "Live" nodes as processed and sync to DB
-      const liveMacs = new Set();
+      const liveNames = new Set<string>();
       for (const ap of accessPoints) {
-        liveMacs.add(ap.mac_address || ap.mac || ap.id || ap.name);
+        // Use composite key: name + device id to avoid false negatives with missing MACs
+        const liveKey = `${(ap.name || '').toLowerCase().trim()}|${device.id}`;
+        liveNames.add(liveKey);
         const dbId = await upsertDiscoveredAP(device.id, ap);
         if (dbId) ap.id = String(dbId);
       }
@@ -1271,7 +1273,8 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
       
       // Merge: Add nodes from DB that were NOT found in the live scan (mark as offline)
       for (const dbAp of dbAPs) {
-        if (!liveMacs.has(dbAp.mac_address)) {
+        const dbKey = `${(dbAp.name || '').toLowerCase().trim()}|${device.id}`;
+        if (!liveNames.has(dbKey)) {
           // If the DB says it's online, but it's not found now, it just went OFF!
           if (dbAp.status !== 'offline') {
             await db.query("UPDATE mikrotik_aps SET status = 'offline' WHERE id = ?", [dbAp.id]);

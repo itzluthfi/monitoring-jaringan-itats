@@ -72,8 +72,11 @@ function APCard({ node, selected, onClick }: { node: TopologyNode; selected: boo
   const c = getStatusColors(node.status);
   const isBackbone = node.wifiSource === 'Backbone';
   const Icon = isBackbone ? Radio : getIcon(node.type);
+  // Backbone online = violet/purple, backbone offline = zinc
+  const bbOnline = isBackbone && node.status === 'online';
+  const bbOffline = isBackbone && node.status !== 'online';
   const themeCls = isBackbone 
-    ? (node.status === 'online' ? 'border-rose-500/50 bg-rose-950/20' : 'border-zinc-700 bg-zinc-900/50')
+    ? (bbOnline ? 'border-violet-500/60 bg-violet-950/20' : 'border-zinc-700 bg-zinc-900/50')
     : `${c.border} bg-zinc-900/90`;
 
   return (
@@ -84,15 +87,19 @@ function APCard({ node, selected, onClick }: { node: TopologyNode; selected: boo
         ${selected ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-zinc-950' : ''}
         ${themeCls} shadow-md`}
     >
-      <div className={`p-1.5 rounded-lg mb-1 ${isBackbone ? 'bg-rose-500/20' : c.bg}`}>
-        <Icon className={`w-4 h-4 ${isBackbone ? 'text-rose-400' : c.text} ${node.status === 'online' ? 'animate-pulse' : ''}`} />
+      <div className={`p-1.5 rounded-lg mb-1 ${bbOnline ? 'bg-violet-500/20' : bbOffline ? 'bg-zinc-800' : c.bg}`}>
+        <Icon className={`w-4 h-4 ${bbOnline ? 'text-violet-400' : bbOffline ? 'text-zinc-500' : c.text} ${node.status === 'online' ? 'animate-pulse' : ''}`} />
       </div>
-      <p className={`font-bold text-[10px] text-center truncate w-full px-0.5 leading-tight ${isBackbone ? 'text-rose-200' : 'text-zinc-100'}`}>{node.name}</p>
+      <p className={`font-bold text-[10px] text-center truncate w-full px-0.5 leading-tight ${bbOnline ? 'text-violet-200' : bbOffline ? 'text-zinc-500' : 'text-zinc-100'}`}>{node.name}</p>
       {node.ssid && node.ssid !== '-' && (
-        <p className={`text-[8px] mt-0.5 truncate w-full text-center ${isBackbone ? 'text-rose-300/70 italic' : 'text-indigo-300'}`}>{node.ssid}</p>
+        <p className={`text-[8px] mt-0.5 truncate w-full text-center ${bbOnline ? 'text-violet-300/70 italic' : bbOffline ? 'text-zinc-600' : 'text-indigo-300'}`}>{node.ssid}</p>
       )}
       <div className="flex flex-wrap justify-center gap-1 mt-1">
-        <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded-full ${c.badge}`}>{node.status}</span>
+        <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded-full ${
+          bbOnline ? 'bg-violet-500/20 text-violet-300' :
+          bbOffline ? 'bg-zinc-700 text-zinc-500' :
+          c.badge
+        }`}>{node.status}</span>
         {node.wifiSource && node.wifiSource !== 'none' && (
           <span className={`text-[7px] font-bold px-1 py-0.5 rounded-full ${getWifiSourceCls(node.wifiSource)}`}>{node.wifiSource}</span>
         )}

@@ -11,6 +11,21 @@
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+// Endpoint-endpoint yang butuh waktu lebih lama (koneksi ke banyak MikroTik)
+const EXTENDED_TIMEOUT_MAP: Record<string, number> = {
+  '/api/topology/dynamic': 90_000,   // banyak router parallel = bisa 40-80s
+  '/api/topology/clients/all': 90_000,
+  '/api/prediction': 30_000,
+  '/api/current-status': 25_000,
+};
+
+function getTimeoutForUrl(url: string): number {
+  for (const [pattern, ms] of Object.entries(EXTENDED_TIMEOUT_MAP)) {
+    if (url.includes(pattern)) return ms;
+  }
+  return DEFAULT_TIMEOUT_MS;
+}
+
 export class AuthFetchError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -39,9 +54,10 @@ export const authFetch = async (url: string, options: RequestInit = {}): Promise
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  // Timeout guard — batalkan fetch jika melebihi 15 detik
+  // Timeout guard — gunakan timeout kustom per endpoint jika tersedia
+  const timeoutMs = getTimeoutForUrl(url);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   
@@ -58,7 +74,7 @@ export const authFetch = async (url: string, options: RequestInit = {}): Promise
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err?.name === 'AbortError') {
-      throw new AuthFetchError(`Request timeout: ${url} tidak merespons setelah ${DEFAULT_TIMEOUT_MS / 1000}s.`, 408);
+      throw new AuthFetchError(`Request timeout: ${url} tidak merespons setelah ${timeoutMs / 1000}s.`, 408);
     }
     throw new AuthFetchError(`Network error: Tidak dapat terhubung ke server. (${err?.message || 'unknown'})`, 0);
   } finally {
