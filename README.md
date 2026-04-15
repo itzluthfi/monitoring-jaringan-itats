@@ -95,6 +95,12 @@ Karena arsitekturnya sudah disediakan, mengubahnya menjadi aplikasi native HP sa
    ```bash
    npx cap sync android
    ```
+
+#ganti asset : 
+```bash
+npx @capacitor/assets generate --android
+
+
 3. Buka project Android di Android Studio:
    ```bash
    npx cap open android
