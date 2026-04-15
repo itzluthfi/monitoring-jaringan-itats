@@ -5,6 +5,7 @@ import { Bell, Menu, AlertTriangle } from 'lucide-react';
 import { authFetch } from '../../lib/authFetch';
 import { Notification } from '../../types';
 import toast from 'react-hot-toast';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 interface AdminLayoutProps {
   onLogout: () => void;
@@ -46,6 +47,15 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
       })
       .catch(() => {}); // It's fine if not configured yet
   }, [authToken]);
+
+  // Request Notification Permissions on Mount
+  React.useEffect(() => {
+    try {
+      LocalNotifications.requestPermissions().then(result => {
+        console.log('[System] Push Notification Permissions:', result.display);
+      }).catch(() => {}); // Will throw silently on web/unsupported
+    } catch (err) {}
+  }, []);
 
   // ── Background Token Expiry Check (setiap 60 detik) ──────────────────────
   React.useEffect(() => {
@@ -113,6 +123,19 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
             if (newNotifs.length > 0) {
               playNotificationSound();
                   
+              // Trigger Hardware Push Notification (Android/iOS via Capacitor)
+              try {
+                const notifyItems = newNotifs.slice(0, 5).map((n: any, idx: number) => ({
+                    title: n.title,
+                    body: n.message,
+                    id: n.id || Math.floor(Math.random() * 100000) + idx,
+                    schedule: { at: new Date(Date.now() + 500 * idx) }, 
+                }));
+                LocalNotifications.schedule({ notifications: notifyItems }).catch(() => {});
+              } catch (err) {
+                 // Ignore if not native Capacitor device
+              }
+
                   if (newNotifs.length >= 3) {
                     // Logic Aggregation (Pengelompokan Notifikasi)
                     const upCount = newNotifs.filter((n: Notification) => n.title.toUpperCase().includes(' UP')).length;

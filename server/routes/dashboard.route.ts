@@ -410,14 +410,20 @@ dashboardRouter.get("/prediction", async (req, res) => {
 
     res.json(JSON.parse(response.text));
   } catch (err) {
-    console.error("AI Prediction Error:", err);
-    res.json({
-      prediction: "AI analysis encountered an error. Showing estimated patterns based on historical averages.",
-      rawanHours: [
-        { hour: "10:00 - 12:00", expectedDensity: "High" },
-        { hour: "13:00 - 15:00", expectedDensity: "High" }
-      ]
-    });
+    console.error("AI Prediction Error (Gemini), falling back to Local AI:", err);
+    try {
+      const fallbackResult = await smartPredict((history as any) || []);
+      return res.json(fallbackResult);
+    } catch (fallbackErr) {
+      console.error("Local AI Fallback Error:", fallbackErr);
+      res.json({
+        prediction: "AI analysis encountered an error. Showing estimated patterns based on historical averages.",
+        rawanHours: [
+          { hour: "10:00 - 12:00", expectedDensity: "High" },
+          { hour: "13:00 - 15:00", expectedDensity: "High" }
+        ]
+      });
+    }
   }
 });
 

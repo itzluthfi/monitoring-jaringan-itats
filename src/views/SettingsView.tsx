@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   Settings as SettingsIcon, Save, Shield, BrainCircuit, Trash2, Clock, Globe, Moon, Sun,
   Volume2, Play, MessageSquare, Plus, Check, Activity, Link2, User, UserPlus, Eye, EyeOff,
-  MailCheck, KeyRound, Pencil, UserX, RefreshCw, Lock, BookOpen
+  MailCheck, KeyRound, Pencil, UserX, RefreshCw, Lock, BookOpen, Smartphone
 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
@@ -68,6 +68,7 @@ export function SettingsView() {
   const [telegramToken, setTelegramToken]   = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
   const [revealToken, setRevealToken]       = useState(false);
+  const [manualApiUrl, setManualApiUrl]     = useState(localStorage.getItem('API_SERVER_URL') || '');
 
   // ── Security: Change my password ──
   const [currentPassword, setCurrentPassword] = useState('');
@@ -141,6 +142,18 @@ export function SettingsView() {
       localStorage.setItem('theme', theme);
       document.documentElement.setAttribute('data-theme', theme);
       localStorage.setItem('notification_polling', String(pollingRate));
+      
+      if (manualApiUrl) {
+        // Validasi format URL sederhana
+        if (!manualApiUrl.startsWith('http')) {
+           toast.error('URL Backend harus diawali dengan http:// atau https://');
+           setSaving(false);
+           return;
+        }
+        localStorage.setItem('API_SERVER_URL', manualApiUrl);
+      } else {
+        localStorage.removeItem('API_SERVER_URL');
+      }
 
       const post = (key: string, value: string) =>
         authFetch(`/api/settings/${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }) });
@@ -456,6 +469,23 @@ export function SettingsView() {
             <div>
               <label className="text-xs font-bold text-zinc-500 block mb-1.5">Chat ID Tujuan</label>
               <input type="text" value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} placeholder="ID Pribadi / Grup (mis. -1001234567)" className={inputCls} />
+            </div>
+
+            <SectionTitle icon={Smartphone} color="text-emerald-400" label="Mobile Connectivity (Capacitor)" />
+            <p className="text-xs text-zinc-400">Gunakan ini jika Anda membuka dashboard dari Aplikasi Android/iOS agar bisa terhubung ke server laptop Anda.</p>
+            
+            <div>
+              <label className="text-xs font-bold text-zinc-500 block mb-1.5">Backend Server URL</label>
+              <input 
+                type="text" 
+                value={manualApiUrl} 
+                onChange={e => setManualApiUrl(e.target.value)} 
+                placeholder="http://172.18.xxx.xxx:3000" 
+                className={inputCls} 
+              />
+              <p className="text-[10px] text-zinc-600 mt-2 italic">
+                * Kosongkan jika hanya menggunakan Browser di laptop yang sama (otomatis pakai localhost).
+              </p>
             </div>
             <SaveButton />
           </div>

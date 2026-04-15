@@ -4,6 +4,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import ping from 'ping';
+import os from 'os';
 import { db, initializeDB } from './db';
 
 import { authRouter } from './routes/auth.route';
@@ -314,7 +315,23 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+    const interfaces = os.networkInterfaces();
+    const addresses: string[] = [];
+    
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name] || []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          addresses.push(`http://${iface.address}:${PORT}`);
+        }
+      }
+    }
+
+    console.log(`\n🚀 Monitoring ITATS Server is Ready!`);
+    console.log(`➜  Web (Local):   http://localhost:${PORT}`);
+    addresses.forEach(addr => {
+      console.log(`➜  Mobile (Wifi):  ${addr}`);
+    });
+    console.log(`──────────────────────────────────────────\n`);
   });
 }
 

@@ -37,14 +37,19 @@ export function DashboardView() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [apHistory, setApHistory] = useState<any[]>([]);
   const [bwData, setBwData] = useState<{routerName: string, rx: number, tx: number, vlans: {name: string, rx: number, tx: number}[]}[]>([]);
+  const [bwHistory, setBwHistory] = useState<Record<string, {time: string, rx: number, tx: number}[]>>({});
 
   // Bandwidth Config State (localStorage-persisted)
-  const [bwConfig, setBwConfig] = useState<{ selectedRouterIds: number[], showVlans: boolean, showEther: boolean, showBridge: boolean }>(() => {
+  const [bwConfig, setBwConfig] = useState<{ selectedRouterIds: number[], showVlans: boolean, showEther: boolean, showBridge: boolean, viewMode: 'text' | 'graph' }>(() => {
     try {
       const saved = localStorage.getItem('bw_config');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!parsed.viewMode) parsed.viewMode = 'text'; // Fallback
+        return parsed;
+      }
     } catch {}
-    return { selectedRouterIds: [], showVlans: true, showEther: true, showBridge: false };
+    return { selectedRouterIds: [], showVlans: true, showEther: true, showBridge: false, viewMode: 'text' };
   });
   const [isBwSettingsOpen, setIsBwSettingsOpen] = useState(false);
 
@@ -106,6 +111,16 @@ export function DashboardView() {
          return { routerName: res.router.name, rx: totalRx, tx: totalTx, vlans };
       });
       setBwData(newBw);
+
+      const nowStr = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second: '2-digit'});
+      setBwHistory(prev => {
+         const next = { ...prev };
+         newBw.forEach(b => {
+             if (!next[b.routerName]) next[b.routerName] = [];
+             next[b.routerName] = [...next[b.routerName], { time: nowStr, rx: b.rx, tx: b.tx }].slice(-15);
+         });
+         return next;
+      });
     } catch (e) {
       console.error(e);
     }
@@ -435,29 +450,56 @@ export function DashboardView() {
                        <div className="flex justify-between items-center mb-4 bg-zinc-950/50 p-3 rounded-lg border border-zinc-800/50">
                           <div>
                             <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider mb-1 flex items-center gap-1"><ArrowDown className="w-3 h-3 text-emerald-400" />Global RX</p>
-                            <p className="text-sm font-mono text-emerald-400">{formatBps(d.rx)}</p>
+                            <p className={`text-sm font-mono text-emerald-400 ${bwConfig.viewMode === 'graph' ? 'mb-1' : ''}`}>{formatBps(d.rx)}</p>
                           </div>
                           <div className="w-px h-8 bg-zinc-800"></div>
                           <div className="text-right">
                             <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider mb-1 flex items-center gap-1 justify-end"><ArrowUp className="w-3 h-3 text-rose-400" />Global TX</p>
-                            <p className="text-sm font-mono text-rose-400">{formatBps(d.tx)}</p>
+                            <p className={`text-sm font-mono text-rose-400 ${bwConfig.viewMode === 'graph' ? 'mb-1' : ''}`}>{formatBps(d.tx)}</p>
                           </div>
                        </div>
                        
-                       {/* VLAN Breakdown */}
-                       {d.vlans.length > 0 && (
-                          <div className="space-y-2">
-                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest border-b border-zinc-800 pb-1">VLAN Breakdown</p>
-                            <div className="max-h-24 overflow-y-auto custom-scrollbar pr-1 space-y-1.5">
-                              {d.vlans.map((v, idx) => (
-                                <div key={idx} className="flex justify-between text-xs">
-                                   <span className="text-zinc-400 truncate w-1/3" title={v.name}>{v.name}</span>
-                                   <span className="text-emerald-400/80 font-mono w-1/3 text-right">{formatBps(v.rx)}</span>
-                                   <span className="text-rose-400/80 font-mono w-1/3 text-right">{formatBps(v.tx)}</span>
-                                </div>
-                              ))}
-                            </div>
+                       {bwConfig.viewMode === 'graph' ? (
+                          <div className="h-32 w-full mt-2">
+                             <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={bwHistory[d.routerName] || []} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
+                                    <defs>
+                                       <linearGradient id={`gradRx-${i}`} x1="0" y1="0" x2="0" y2="1">
+                                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                                         <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                       </linearGradient>
+                                       <linearGradient id={`gradTx-${i}`} x1="0" y1="0" x2="0" y2="1">
+                                         <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.8}/>
+                                         <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                                       </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" vertical={false} />
+                                    <XAxis dataKey="time" stroke="#a1a1aa" fontSize={8} tickMargin={5} axisLine={false} tickLine={false} />
+                                    <YAxis stroke="#a1a1aa" fontSize={8} tickFormatter={(v) => formatBps(v)} axisLine={false} tickLine={false} />
+                                    <RechartsTooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46', borderRadius: '0.5rem', fontSize: '10px' }} labelStyle={{color: '#a1a1aa'}} formatter={(v: number) => formatBps(v)} />
+                                    <Area type="monotone" dataKey="rx" name="RX" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill={`url(#gradRx-${i})`} />
+                                    <Area type="monotone" dataKey="tx" name="TX" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill={`url(#gradTx-${i})`} />
+                                </AreaChart>
+                             </ResponsiveContainer>
                           </div>
+                       ) : (
+                         <>
+                           {/* VLAN Breakdown */}
+                           {d.vlans.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest border-b border-zinc-800 pb-1">VLAN Breakdown</p>
+                                <div className="max-h-24 overflow-y-auto custom-scrollbar pr-1 space-y-1.5">
+                                  {d.vlans.map((v, idx) => (
+                                    <div key={idx} className="flex justify-between text-xs">
+                                       <span className="text-zinc-400 truncate w-1/3" title={v.name}>{v.name}</span>
+                                       <span className="text-emerald-400/80 font-mono w-1/3 text-right">{formatBps(v.rx)}</span>
+                                       <span className="text-rose-400/80 font-mono w-1/3 text-right">{formatBps(v.tx)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                           )}
+                         </>
                        )}
                     </div>
                  )) : (
@@ -790,8 +832,21 @@ export function DashboardView() {
                 </div>
               </div>
 
-              <p className="text-xs text-zinc-600 bg-zinc-950/50 rounded-xl p-3 border border-zinc-800">
-                ℹ️ Perubahan disimpan otomatis ke localStorage dan akan diaplikasikan pada polling bandwidth berikutnya.
+              {/* View Mode Toggle */}
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-300 mb-3">Mode Tampilan Bandwidth</h4>
+                <div className="flex bg-zinc-950/80 p-1.5 rounded-xl border border-zinc-800">
+                  <button onClick={() => saveBwConfig({ ...bwConfig, viewMode: 'text' })} className={`flex-1 flex justify-center items-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${bwConfig.viewMode === 'text' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                    <Activity className="w-4 h-4" /> Mode Teks & VLAN
+                  </button>
+                  <button onClick={() => saveBwConfig({ ...bwConfig, viewMode: 'graph' })} className={`flex-1 flex justify-center items-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${bwConfig.viewMode === 'graph' ? 'bg-indigo-600 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                    <Maximize className="w-4 h-4" /> Mode Grafik Live
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-600 bg-zinc-950/50 rounded-xl p-3 border border-zinc-800 mt-2">
+                ℹ️ Perubahan disimpan otomatis dan akan diaplikasikan pada polling bandwidth berikutnya.
               </p>
             </div>
           </div>

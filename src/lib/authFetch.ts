@@ -44,7 +44,12 @@ export const authFetch = async (url: string, options: RequestInit = {}): Promise
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
   let response: Response;
-  const baseUrl = import.meta.env.VITE_API_URL || '';
+  
+  // ── Smart API Discovery ──
+  const manualUrl = localStorage.getItem('API_SERVER_URL');
+  const envUrl = import.meta.env.VITE_API_URL;
+  const baseUrl = manualUrl || envUrl || '';
+  
   const finalUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
 
   try {
