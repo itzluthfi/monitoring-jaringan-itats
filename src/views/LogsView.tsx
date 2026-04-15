@@ -183,8 +183,8 @@ export function LogsView() {
               onClick={() => setIsFilterModalOpen(true)}
               className={`p-2.5 border rounded-xl transition-all shadow-lg flex items-center gap-2 ${
                 deviceId || topicFilter || startDate || endDate 
-                ? 'bg-indigo-600 border-indigo-500 text-white shadow-indigo-500/20' 
-                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+                ? 'bg-indigo-600 border-indigo-500 text-white-fixed shadow-indigo-500/20' 
+                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white-fixed'
               }`}
            >
              <Filter className="w-5 h-5" />
@@ -225,7 +225,7 @@ export function LogsView() {
         <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1">
            <button 
              onClick={() => { setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc'); setPage(1); }}
-             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${sortOrder === 'desc' ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}
+             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${sortOrder === 'desc' ? 'bg-indigo-600 text-white-fixed' : 'bg-zinc-800 text-zinc-400'}`}
            >
               {sortOrder === 'desc' ? <SortDesc size={14} /> : <SortAsc size={14} />}
               <span className="text-[10px] font-bold uppercase tracking-wider">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
@@ -281,7 +281,7 @@ export function LogsView() {
                     <td className="px-6 py-4">
                       <div className="flex items-start gap-3">
                         {isGrouped && (
-                          <span className="flex-shrink-0 px-2 py-0.5 bg-indigo-500 text-white text-[10px] font-black rounded-md shadow-lg shadow-indigo-500/20">
+                          <span className="flex-shrink-0 px-2 py-0.5 bg-indigo-500 text-white-fixed text-[10px] font-black rounded-md shadow-lg shadow-indigo-500/20">
                             {log.occurrences}x
                           </span>
                         )}

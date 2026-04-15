@@ -107,7 +107,7 @@ export function Sidebar({
                       
                       {/* Hover Tooltip for Collapsed Sidebar */}
                       {isCollapsed && (
-                        <div className="absolute left-full ml-4 px-3 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-lg shadow-2xl opacity-0 translate-x-[-10px] pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 z-[999] whitespace-nowrap border border-indigo-500/50">
+                        <div className="absolute left-full ml-4 px-3 py-2 bg-indigo-600 text-white-fixed text-[11px] font-bold rounded-lg shadow-2xl opacity-0 translate-x-[-10px] pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 z-[999] whitespace-nowrap border border-indigo-500/50">
                           {item.label}
                           {/* Triangle arrow for tooltip */}
                           <div className="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-indigo-600" />

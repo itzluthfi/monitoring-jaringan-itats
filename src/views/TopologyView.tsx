@@ -712,7 +712,7 @@ export function TopologyView() {
                 onClick={() => toggleRouter('all')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 border
                   ${activeRouters.has('all')
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                    ? 'bg-indigo-600 border-indigo-500 text-white-fixed shadow-lg shadow-indigo-500/30'
                     : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'
                   }`}
               >
@@ -731,7 +731,7 @@ export function TopologyView() {
                     onClick={() => toggleRouter(router.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 border
                       ${isOn
-                        ? 'bg-zinc-800 border-indigo-500/70 text-white shadow-md'
+                        ? 'bg-zinc-800 border-indigo-500/70 text-white-fixed shadow-md'
                         : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'
                       }`}
                   >

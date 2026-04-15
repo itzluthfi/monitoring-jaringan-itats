@@ -133,7 +133,7 @@ export function NotificationsView() {
                               markRead(notif.id);
                               window.location.href = notif.action_url;
                           }}
-                          className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20"
+                          className="px-3 py-1.5 bg-indigo-600 text-white-fixed text-xs font-bold rounded-lg hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/20"
                         >
                           Investigasi
                         </button>
