@@ -7,12 +7,13 @@ import {
   Bell,
   Router as RouterIcon,
   Brain,
-  Users
+  Users,
+  MessageSquare
 } from 'lucide-react';
 
 import React from 'react';
 
-export type ViewType = 'dashboard' | 'map' | 'topology' | 'vlan' | 'devices' | 'aps' | 'logs' | 'settings' | 'notifications' | 'smart-central' | 'clients' | 'controllers';
+export type ViewType = 'dashboard' | 'map' | 'topology' | 'vlan' | 'devices' | 'aps' | 'logs' | 'settings' | 'notifications' | 'smart-central' | 'clients' | 'controllers' | 'tickets';
 
 
 export interface NavItem {
@@ -31,6 +32,7 @@ export const NAVIGATION: NavItem[] = [
   { id: 'clients', label: 'Clients', icon: Users },
   { id: 'controllers', label: 'Adapters / Controllers', icon: Network },
   { id: 'logs', label: 'System Logs', icon: Activity },
+  { id: 'tickets', label: 'Trouble Reports', icon: MessageSquare },
 
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'smart-central', label: 'Smart Central', icon: Brain },

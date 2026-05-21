@@ -68,6 +68,7 @@ export function LogsView() {
     try {
       await authFetch('/api/settings/log_retention_days', {
          method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ value: retentionDays })
       });
       alert('Retention policy updated successfully');
@@ -75,12 +76,24 @@ export function LogsView() {
   };
 
   const toggleDeviceLogs = async (id: number, enabled: boolean) => {
+    // Optimistic UI Update: immediately change the status in the UI for instant feedback
+    setDevices(prevDevices => 
+      prevDevices.map(d => d.id === id ? { ...d, logs_enabled: enabled ? 1 : 0 } : d)
+    );
     try {
       await authFetch(`/api/mikrotiks/${id}/toggle-logs`, {
-         method: 'POST', body: JSON.stringify({ enabled })
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ enabled })
       });
-      fetchDevices();
-    } catch (e) { console.error(e); }
+      fetchDevices(); // Sync with server database state
+    } catch (e) { 
+      console.error(e);
+      // Revert optimistic update on failure
+      setDevices(prevDevices => 
+        prevDevices.map(d => d.id === id ? { ...d, logs_enabled: enabled ? 0 : 1 } : d)
+      );
+    }
   };
 
   const runManualCleanup = async () => {
@@ -89,6 +102,7 @@ export function LogsView() {
     try {
       const res = await authFetch('/api/logs/manual-cleanup', {
          method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({
             startDate: manualCleanupRange.start,
             endDate: manualCleanupRange.end,
@@ -463,12 +477,13 @@ export function LogsView() {
                                 <p className="font-bold text-zinc-200">{device.name}</p>
                                 <p className="text-[10px] text-zinc-500 font-mono">{device.host}</p>
                              </div>
-                             <button 
-                                onClick={() => toggleDeviceLogs(device.id, !device.logs_enabled)}
-                                className={`relative inline-flex h-6 w-12 items-center rounded-full transition-all ${device.logs_enabled ? 'bg-emerald-600' : 'bg-zinc-700'}`}
-                             >
-                                <span className={`h-4 w-4 transform rounded-full bg-white transition-transform ${device.logs_enabled ? 'translate-x-7' : 'translate-x-1'}`} />
-                             </button>
+                              <button 
+                                 type="button"
+                                 onClick={() => toggleDeviceLogs(device.id, device.logs_enabled !== 1)}
+                                 className={`relative inline-flex h-6 w-12 items-center rounded-full transition-all ${device.logs_enabled === 1 ? 'bg-emerald-600' : 'bg-zinc-700'}`}
+                              >
+                                 <span className={`h-4 w-4 transform rounded-full bg-white transition-transform ${device.logs_enabled === 1 ? 'translate-x-7' : 'translate-x-1'}`} />
+                              </button>
                           </div>
                        ))}
                     </div>

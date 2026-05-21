@@ -206,7 +206,7 @@ export default function PublicMapPage() {
     const labelColor = isOffline ? "#9ca3af" : "#f8fafc";
     const html = `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;max-width:120px;">
       <div style="padding:4px 8px;border-radius:999px;background:rgba(15,23,42,0.95);color:${labelColor};font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
-      <div style="position:relative;width:48px;height:48px;border-radius:999px;background:${fillColor};display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px rgba(15,23,42,0.3);filter:${isOffline ? 'grayscale(100%) brightness(0.7)' : 'none'};">
+      <div style="position:relative;width:48px;height:48px;border-radius:999px;background:${fillColor};display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px rgba(15,23,42,0.3);filter:${isOffline ? "grayscale(100%) brightness(0.7)" : "none"};">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           ${isOffline ? `<line x1="2" y1="22" x2="22" y2="2" stroke="white" stroke-width="2" stroke-linecap="round" />` : ""}
           <path d="M2 8.5C7 3.5 17 3.5 22 8.5" stroke="white" stroke-width="2" stroke-linecap="round" />

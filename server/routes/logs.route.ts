@@ -117,7 +117,7 @@ logsRouter.post('/seed', requireAuth, async (req, res) => {
       { topics: 'info,system', msg: 'interface ether1 link up' }
     ];
 
-    const [devices]: any = await db.query("SELECT id FROM mikrotik_devices LIMIT 3");
+    const [devices]: any = await db.query("SELECT id FROM mikrotik_devices");
     if (devices.length === 0) {
       return res.status(400).json({ error: "No devices found to seed logs for." });
     }

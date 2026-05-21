@@ -180,6 +180,37 @@ export const initializeDB = async () => {
       )
     `);
 
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS tickets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ticket_code VARCHAR(50) UNIQUE NOT NULL,
+        reporter_id VARCHAR(50) NOT NULL,
+        reporter_name VARCHAR(255) NOT NULL,
+        reporter_email VARCHAR(255) NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        photo_url VARCHAR(255) NULL,
+        status VARCHAR(20) DEFAULT 'open',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ticket_replies (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ticket_id INT NOT NULL,
+        sender_type VARCHAR(10) NOT NULL, -- 'user' or 'admin'
+        sender_name VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        photo_url VARCHAR(255) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+      )
+    `);
+
+
     const [users]: any = await db.query('SELECT * FROM admin_users WHERE username = ?', ['admin']);
     if (users.length === 0) {
       const hash = await bcrypt.hash('admin123', 10);

@@ -20,7 +20,13 @@ import { LogsView } from "./views/LogsView";
 import { SmartCentralView } from "./views/SmartCentralView";
 import { ClientReportView } from "./views/ClientReportView";
 import { ControllersView } from "./views/ControllersView";
+import TicketsView from "./views/TicketsView";
 import { Toaster } from "react-hot-toast";
+
+// Pages
+import TicketForm from "./pages/TicketForm";
+import StatusBoardPage from "./pages/StatusBoardPage";
+import TicketChatPage from "./pages/TicketChatPage";
 
 export default function Router() {
   React.useEffect(() => {
@@ -51,6 +57,9 @@ export default function Router() {
             <PublicPage onGoToLogin={() => (window.location.href = "/login")} />
           }
         />
+        <Route path="/report" element={<TicketForm />} />
+        <Route path="/status-board" element={<StatusBoardPage />} />
+        <Route path="/ticket/:code" element={<TicketChatPage />} />
 
         {/* ── Login Route ─────────────
             AlreadyLoggedIn: jika token masih valid, langsung redirect ke dashboard
@@ -89,6 +98,7 @@ export default function Router() {
           <Route path="devices/*" element={<DevicesView />} />
           <Route path="aps" element={<AccessPointsView />} />
           <Route path="logs" element={<LogsView />} />
+          <Route path="tickets" element={<TicketsView />} />
           <Route path="settings" element={<SettingsView />} />
           <Route path="notifications" element={<NotificationsView />} />
           <Route path="smart-central" element={<SmartCentralView />} />

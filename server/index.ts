@@ -19,6 +19,7 @@ import { settingsRouter } from './routes/settings.route';
 import { adapterRouter } from './routes/adapter.route';
 import { controllersRouter } from './routes/controllers.route';
 import { adminsRouter } from './routes/admins.route';
+import { ticketsRouter } from './routes/tickets.route';
 import { requireAuth } from './middleware/auth';
 
 dotenv.config();
@@ -65,6 +66,8 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/public', publicRouter);
+app.use('/api/tickets', ticketsRouter);
+app.use('/uploads', express.static(path.join(process.cwd(), 'public/uploads')));
 
 // Protected routes
 app.use('/api/mikrotiks', requireAuth, mikrotiksRouter);
@@ -264,7 +267,7 @@ setInterval(async () => {
         { topics: 'info,system', msg: 'interface ether1 link up' }
       ];
       
-      const [devices]: any = await db.query("SELECT id FROM mikrotik_devices LIMIT 5");
+      const [devices]: any = await db.query("SELECT id FROM mikrotik_devices WHERE logs_enabled = 1");
       for (const d of devices) {
         const rand = messages[Math.floor(Math.random() * messages.length)];
         const time = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -308,6 +311,23 @@ setInterval(async () => {
         else if (err.code === 'ETIMEDOUT') errorMsg = "Koneksi Timeout (Router tidak merespons)";
         
         console.error(`\x1b[31m[Log-Archive] ❌ ${device.name}: ${errorMsg}\x1b[0m`);
+
+        // Log connection error to database so user sees it in LogsView
+        try {
+          const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+          const [recentError]: any = await db.query(
+            "SELECT id FROM mikrotik_logs WHERE device_id = ? AND topics = 'critical,system' AND message LIKE ? AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1",
+            [device.id, `%${errorMsg}%`]
+          );
+          if (recentError.length === 0) {
+            await db.query(
+              "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
+              [device.id, '*err', time, 'critical,system', `[System Error] ${errorMsg}`]
+            );
+          }
+        } catch (dbErr) {
+          console.error("Failed to log connection error to database:", dbErr);
+        }
       }
     }
 
