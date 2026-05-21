@@ -149,7 +149,7 @@ export default function TicketForm() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5">NIM / NIP / Kode Pegawai</label>
+                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5">NPM / NIP</label>
                       <input
                         required
                         type="text"
