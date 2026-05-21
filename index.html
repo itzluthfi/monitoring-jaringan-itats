@@ -15,7 +15,7 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        transition: opacity 0.8s ease-out;
+        transition: opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1);
         overflow: hidden;
         user-select: none;
         pointer-events: none;
@@ -114,7 +114,7 @@
         background: linear-gradient(90deg, #10b981, #7c3aed);
         width: 0%;
         box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
-        animation: progress-load 3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        animation: progress-load 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
       }
 
       @keyframes rotate-3d {

@@ -1,4 +1,4 @@
-import { db } from './server/db.js';
+import { db } from '../server/db';
 
 async function migrate() {
   try {

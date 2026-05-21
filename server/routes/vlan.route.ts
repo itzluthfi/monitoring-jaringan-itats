@@ -73,32 +73,63 @@ vlanRouter.get('/:id/vlan-traffic', async (req, res) => {
       })));
     }
 
-    const client = createMikrotikClient(device);
-    const api = await client.connect();
-    const [ifaces, vlansDetail, monitorResults] = await Promise.all([
-      (api as any).rosApi.write(["/interface/print", "=stats="]).catch(() => []),
-      (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => []),
-      (api as any).rosApi.write(["/interface/monitor-traffic", "=interface=all", "=once="]).catch(() => [])
-    ]);
-    await client.close();
-
-    const monitorMap: Record<string, any> = {};
-    if (Array.isArray(monitorResults)) {
-      monitorResults.forEach((m: any) => {
-        if (m.name) monitorMap[m.name] = m;
-      });
+    let client;
+    let api;
+    try {
+      client = createMikrotikClient(device);
+      api = await client.connect();
+    } catch (connectErr: any) {
+      console.error(`[VlanTraffic] Failed to connect to ${device.name} (${device.host}):`, connectErr?.message || connectErr);
+      return res.json([]);
     }
 
-    const vlanNames = new Set((vlansDetail || []).map((v: any) => v.name));
-    const vlans = (ifaces || []).map((v: any) => {
-      const m = monitorMap[v.name] || {};
-      return {
-        ...v,
-        'rx-rate': m['rx-bits-per-second'] || v['rx-bits-per-second'] || v['rx-rate'] || v['fp-rx-bits-per-second'] || 0,
-        'tx-rate': m['tx-bits-per-second'] || v['tx-bits-per-second'] || v['tx-rate'] || v['fp-tx-bits-per-second'] || 0
-      };
-    });
-    res.json(vlans);
+    try {
+      const [ifaces, vlansDetail] = await Promise.all([
+        (api as any).rosApi.write(["/interface/print", "=stats="]).catch(() => []),
+        (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => [])
+      ]);
+
+      const interfaceNames = Array.isArray(ifaces)
+        ? ifaces.map((i: any) => i.name).filter(Boolean)
+        : [];
+
+      let monitorResults = [];
+      if (interfaceNames.length > 0) {
+        const namesStr = interfaceNames.join(',');
+        monitorResults = await (api as any).rosApi.write([
+          "/interface/monitor-traffic",
+          `=interface=${namesStr}`,
+          "=once="
+        ]).catch((e: any) => {
+          console.warn(`[VlanTraffic] Failed to monitor traffic for ${device.name}:`, e?.message || e);
+          return [];
+        });
+      }
+
+      await client.close().catch(() => {});
+
+      const monitorMap: Record<string, any> = {};
+      if (Array.isArray(monitorResults)) {
+        monitorResults.forEach((m: any) => {
+          if (m.name) monitorMap[m.name] = m;
+        });
+      }
+
+      const vlanNames = new Set((vlansDetail || []).map((v: any) => v.name));
+      const vlans = (ifaces || []).map((v: any) => {
+        const m = monitorMap[v.name] || {};
+        return {
+          ...v,
+          'rx-rate': m['rx-bits-per-second'] || v['rx-bits-per-second'] || v['rx-rate'] || v['fp-rx-bits-per-second'] || 0,
+          'tx-rate': m['tx-bits-per-second'] || v['tx-bits-per-second'] || v['tx-rate'] || v['fp-tx-bits-per-second'] || 0
+        };
+      });
+      res.json(vlans);
+    } catch (fetchErr: any) {
+      console.error(`[VlanTraffic] Failed to fetch data from ${device.name}:`, fetchErr?.message || fetchErr);
+      await client.close().catch(() => {});
+      res.json([]);
+    }
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 

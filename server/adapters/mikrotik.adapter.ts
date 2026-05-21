@@ -38,20 +38,28 @@ export class MikrotikAdapter implements INetworkAdapter {
       const api = await client.connect();
 
       // ── Step 1: Ambil interface list + stats (=stats= memberikan byte counters yang lebih akurat) ──
-      const [ifaceList, vlans, monitorResults] = await Promise.all([
+      const [ifaceList, vlans] = await Promise.all([
         (api as any).rosApi.write(['/interface/print', '=stats=']).catch(() =>
           // Fallback tanpa =stats= jika RouterOS lama tidak mendukung
           (api as any).rosApi.write(['/interface/print']).catch(() => [])
         ),
         // ── Step 2: Ambil VLAN parent mapping (sama dengan logika route lama) ──
         (api as any).rosApi.write(['/interface/vlan/print']).catch(() => []),
-        // ── Step 3: Real-time rates via monitor-traffic ──
-        (api as any).rosApi.write([
-          '/interface/monitor-traffic',
-          '=interface=all',
-          '=once=',
-        ]).catch(() => []),
       ]);
+
+      const interfaceNames = Array.isArray(ifaceList)
+        ? ifaceList.map((i: any) => i.name).filter(Boolean)
+        : [];
+
+      let monitorResults = [];
+      if (interfaceNames.length > 0) {
+        const namesStr = interfaceNames.join(',');
+        monitorResults = await (api as any).rosApi.write([
+          '/interface/monitor-traffic',
+          `=interface=${namesStr}`,
+          '=once=',
+        ]).catch(() => []);
+      }
 
       await client.close().catch(() => {});
 

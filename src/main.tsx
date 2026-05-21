@@ -7,19 +7,22 @@ import './index.css';
 // 1. Langsung sembunyikan native splash agar animasi HTML di index.html muncul instan
 SplashScreen.hide();
 
-// 2. Kontrol penghapusan overlay HTML setelah 3.5 detik
+// 2. Kontrol penghapusan overlay HTML
 const hideBootscreen = () => {
   const overlay = document.getElementById('bootscreen-overlay');
   if (overlay) {
     overlay.style.opacity = '0';
     setTimeout(() => {
       overlay.remove();
-    }, 800); // Tunggu transisi opacity selesai
+    }, 400); // Tunggu transisi opacity selesai (lebih cepat: 400ms)
   }
 };
 
-// Start the countdown
-setTimeout(hideBootscreen, 3500);
+// Expose to window so React Router / Components can trigger it dynamically when ready
+(window as any).hideBootscreen = hideBootscreen;
+
+// Fallback countdown in case React crashes or takes too long to load
+setTimeout(hideBootscreen, 3000);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

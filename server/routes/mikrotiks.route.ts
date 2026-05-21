@@ -429,46 +429,77 @@ mikrotiksRouter.get('/:id/interfaces', async (req, res) => {
       ]);
     }
 
-    const client = createMikrotikClient(device);
-    const api = await client.connect();
-    const [interfaces, vlans, monitorResults] = await Promise.all([
-      (api as any).rosApi.write(["/interface/print", "=stats="]),
-      (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => []),
-      (api as any).rosApi.write(["/interface/monitor-traffic", "=interface=all", "=once="]).catch(() => [])
-    ]);
-    await client.close();
-
-    const vlanParents: Record<string, string> = {};
-    if (Array.isArray(vlans)) {
-      vlans.forEach((v: any) => {
-        if (v.name && v.interface) vlanParents[v.name] = v.interface;
-      });
+    let client;
+    let api;
+    try {
+      client = createMikrotikClient(device);
+      api = await client.connect();
+    } catch (connectErr: any) {
+      console.error(`[Interfaces] Failed to connect to ${device.name} (${device.host}):`, connectErr?.message || connectErr);
+      return res.json([]);
     }
 
-    // Map monitor results by interface name for quick lookup
-    const monitorMap: Record<string, any> = {};
-    if (Array.isArray(monitorResults)) {
-      monitorResults.forEach((m: any) => {
-        if (m.name) monitorMap[m.name] = m;
+    try {
+      const [interfaces, vlans] = await Promise.all([
+        (api as any).rosApi.write(["/interface/print", "=stats="]),
+        (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => [])
+      ]);
+
+      const interfaceNames = Array.isArray(interfaces)
+        ? interfaces.map((i: any) => i.name).filter(Boolean)
+        : [];
+
+      let monitorResults = [];
+      if (interfaceNames.length > 0) {
+        const namesStr = interfaceNames.join(',');
+        monitorResults = await (api as any).rosApi.write([
+          "/interface/monitor-traffic",
+          `=interface=${namesStr}`,
+          "=once="
+        ]).catch((e: any) => {
+          console.warn(`[Interfaces] Failed to monitor traffic for ${device.name}:`, e?.message || e);
+          return [];
+        });
+      }
+
+      await client.close().catch(() => {});
+
+      const vlanParents: Record<string, string> = {};
+      if (Array.isArray(vlans)) {
+        vlans.forEach((v: any) => {
+          if (v.name && v.interface) vlanParents[v.name] = v.interface;
+        });
+      }
+
+      // Map monitor results by interface name for quick lookup
+      const monitorMap: Record<string, any> = {};
+      if (Array.isArray(monitorResults)) {
+        monitorResults.forEach((m: any) => {
+          if (m.name) monitorMap[m.name] = m;
+        });
+      }
+
+      const mapped = (interfaces || []).map((i: any) => {
+        // Get rates from monitor-traffic first as it's more accurate for real-time bps
+        const m = monitorMap[i.name] || {};
+        
+        const rxRate = m['rx-bits-per-second'] || i['rx-bits-per-second'] || i['rx-rate'] || i['fp-rx-bits-per-second'] || 0;
+        const txRate = m['tx-bits-per-second'] || i['tx-bits-per-second'] || i['tx-rate'] || i['fp-tx-bits-per-second'] || 0;
+
+        return {
+          ...i,
+          'rx-rate': rxRate,
+          'tx-rate': txRate,
+          parent: vlanParents[i.name] || null
+        };
       });
+
+      res.json(mapped);
+    } catch (fetchErr: any) {
+      console.error(`[Interfaces] Failed to fetch data from ${device.name}:`, fetchErr?.message || fetchErr);
+      await client.close().catch(() => {});
+      res.json([]);
     }
-
-    const mapped = (interfaces || []).map((i: any) => {
-      // Get rates from monitor-traffic first as it's more accurate for real-time bps
-      const m = monitorMap[i.name] || {};
-      
-      const rxRate = m['rx-bits-per-second'] || i['rx-bits-per-second'] || i['rx-rate'] || i['fp-rx-bits-per-second'] || 0;
-      const txRate = m['tx-bits-per-second'] || i['tx-bits-per-second'] || i['tx-rate'] || i['fp-tx-bits-per-second'] || 0;
-
-      return {
-        ...i,
-        'rx-rate': rxRate,
-        'tx-rate': txRate,
-        parent: vlanParents[i.name] || null
-      };
-    });
-
-    res.json(mapped);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
