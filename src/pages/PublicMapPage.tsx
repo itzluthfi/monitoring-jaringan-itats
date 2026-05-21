@@ -23,6 +23,9 @@ import {
   ArrowDownUp,
   Info,
   X,
+  Sun,
+  Moon,
+  LayoutList,
 } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
@@ -128,6 +131,15 @@ export default function PublicMapPage() {
   const [showInfoTooltip, setShowInfoTooltip] = useState(false);
   const [showUserDetail, setShowUserDetail] = useState(false);
   const [showDeviceDetail, setShowDeviceDetail] = useState(false);
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    try { return localStorage.getItem('pub-theme') !== 'light'; } catch { return true; }
+  });
+
+  const toggleTheme = () => setIsDark((v) => {
+    const next = !v;
+    try { localStorage.setItem('pub-theme', next ? 'dark' : 'light'); } catch {}
+    return next;
+  });
 
   const baseUrl = import.meta.env.VITE_API_URL || "";
 
@@ -285,7 +297,7 @@ export default function PublicMapPage() {
   const hasIssues = status && (status.network?.offline > 0 || status.hasActiveAlerts);
 
   return (
-    <div className="min-h-screen bg-[#08111f] text-zinc-100 font-sans">
+    <div className={`min-h-screen font-sans transition-colors duration-300 ${isDark ? 'bg-[#08111f] text-zinc-100' : 'bg-[#eef2f9] text-slate-900 pub-light'}`}>
       {/* Mobile Search Drawer */}
       {leftExpanded && isMobile && (
         <div className="fixed inset-0 z-[700] flex flex-col bg-slate-950/95 backdrop-blur-xl lg:hidden">
@@ -474,125 +486,222 @@ export default function PublicMapPage() {
         </div>
       )}
 
-      <header className="sticky top-0 z-[500] border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
-        <div className="mx-auto px-4 md:px-6 py-4 flex flex-col gap-3 md:gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-              <MapPin className="w-5 h-5 text-cyan-300" />
+      <header className={`sticky top-0 z-[500] border-b backdrop-blur-xl ${isDark ? 'border-white/10 bg-slate-950/80' : 'border-black/8 bg-white/92'}`}>
+        <div className="mx-auto px-4 md:px-6 py-3 md:py-4">
+
+          {/* ── MOBILE HEADER: satu baris, compact ── */}
+          <div className="flex items-center justify-between md:hidden">
+            {/* Logo kecil */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
+                <MapPin className="w-4 h-4 text-cyan-400" />
+              </div>
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.3em] text-cyan-400/70 font-semibold leading-none">ITATS Portal</p>
+                <h1 className="text-base font-bold tracking-tight leading-tight">Live Campus Map</h1>
+              </div>
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/70 font-semibold">
-                ITATS Student Portal
-              </p>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                Live Campus Map
-              </h1>
+            {/* Icons kanan: Info + Theme toggle */}
+            <div className="flex items-center gap-2">
+              {/* Info lapor */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowInfoTooltip((v) => !v)}
+                  className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border transition ${
+                    isDark ? 'border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40' : 'border-slate-200 bg-white text-slate-500 hover:text-cyan-600'
+                  }`}
+                  title="Cara melaporkan gangguan"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+                {showInfoTooltip && (
+                  <div className="absolute top-10 right-0 z-[600] w-72 rounded-2xl border border-cyan-500/20 bg-slate-950 shadow-2xl shadow-cyan-950/30 p-4">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Info className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                        <p className="text-sm font-bold text-white">Cara Lapor Gangguan</p>
+                      </div>
+                      <button onClick={() => setShowInfoTooltip(false)} className="text-zinc-500 hover:text-white transition">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="space-y-2 text-xs text-zinc-400 leading-relaxed">
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">1.</span><p>Klik tombol <span className="text-rose-300 font-semibold">Lapor</span> di menu bawah.</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">2.</span><p>Isi formulir: nama, lokasi, dan deskripsi masalah koneksi.</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">3.</span><p>Laporan dikirim ke tim UPT TI dan ditangani sesuai antrean (<span className="text-indigo-300 font-semibold">sistem tiket</span>).</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">4.</span><p>Pantau melalui menu <span className="text-indigo-300 font-semibold">Tiket</span> di bawah.</p></div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-zinc-500">Tiket = nomor antrian penanganan</div>
+                  </div>
+                )}
+              </div>
+              {/* Theme toggle */}
+              <button
+                onClick={toggleTheme}
+                className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border transition ${
+                  isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-slate-200 bg-white/80 text-slate-600 hover:bg-white'
+                }`}
+                title={isDark ? 'Mode Terang' : 'Mode Gelap'}
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 md:gap-3 items-center">
-            {isMobile && (
-              <>
-                <button
-                  onClick={() => setLeftExpanded(true)}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 md:hidden"
-                >
-                  <Search className="w-4 h-4" />
-                  Cari
-                </button>
-                {selectedBuilding && (
-                  <button
-                    onClick={() => setRightExpanded(true)}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20 md:hidden"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    Detail
-                  </button>
-                )}
-              </>
-            )}
-            {/* Info tooltip tentang cara lapor */}
-            <div className="relative">
-              <button
-                onClick={() => (window.location.href = "/report")}
-                className="relative inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-rose-300 transition-all duration-200 hover:bg-rose-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-rose-950/20"
-              >
-                <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                </span>
-                <Plus className="w-4 h-4 text-rose-400" />
-                <span className="hidden sm:inline">Lapor Gangguan</span>
-                <span className="sm:hidden">Lapor</span>
-              </button>
-              <button
-                onClick={() => setShowInfoTooltip((v) => !v)}
-                className="ml-1 inline-flex items-center justify-center w-6 h-6 rounded-full border border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40 transition"
-                title="Cara melaporkan gangguan"
-              >
-                <Info className="w-3.5 h-3.5" />
-              </button>
-              {showInfoTooltip && (
-                <div className="absolute top-12 right-0 z-[600] w-72 rounded-2xl border border-cyan-500/20 bg-slate-950 shadow-2xl shadow-cyan-950/30 p-4">
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Info className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                      <p className="text-sm font-bold text-white">Cara Lapor Gangguan</p>
-                    </div>
-                    <button onClick={() => setShowInfoTooltip(false)} className="text-zinc-500 hover:text-white transition">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="space-y-2 text-xs text-zinc-400 leading-relaxed">
-                    <div className="flex gap-2">
-                      <span className="text-cyan-400 font-bold flex-shrink-0">1.</span>
-                      <p>Klik tombol <span className="text-rose-300 font-semibold">Lapor Gangguan</span> di sebelah kiri.</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-cyan-400 font-bold flex-shrink-0">2.</span>
-                      <p>Isi formulir: nama, lokasi kejadian, dan deskripsi masalah koneksi.</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-cyan-400 font-bold flex-shrink-0">3.</span>
-                      <p>Laporan dikirim ke tim UPT TI dan akan ditangani sesuai antrean (<span className="text-indigo-300 font-semibold">sistem tiket</span>).</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-cyan-400 font-bold flex-shrink-0">4.</span>
-                      <p>Pantau status laporan kamu melalui tombol <span className="text-indigo-300 font-semibold">Status Tiket</span>.</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-zinc-500">
-                    Tiket = nomor antrian penanganan — bukan yang lain 😊
-                  </div>
-                </div>
-              )}
+          {/* ── DESKTOP HEADER: full layout ── */}
+          <div className="hidden md:flex md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                <MapPin className="w-5 h-5 text-cyan-300" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/70 font-semibold">ITATS Student Portal</p>
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Live Campus Map</h1>
+              </div>
             </div>
-            <button
-              onClick={() => (window.location.href = "/status-board")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-indigo-300 transition-all duration-200 hover:bg-indigo-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-indigo-950/20"
-            >
-              <MessageSquare className="w-4 h-4 text-indigo-400" />
-              <span className="hidden sm:inline">Status Tiket</span>
-              <span className="sm:hidden">Tiket</span>
-            </button>
-            <button
-              onClick={() => (window.location.href = "/login")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-cyan-200 transition-all duration-200 hover:bg-cyan-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-cyan-950/20"
-            >
-              <Shield className="w-4 h-4 text-cyan-400" />
-              Admin
-            </button>
-            <button
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900/80 px-3 md:px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 hover:scale-[1.02] duration-200 cursor-pointer"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
+            <div className="flex gap-3 items-center">
+              {/* Lapor Gangguan */}
+              <div className="relative">
+                <button
+                  onClick={() => (window.location.href = "/report")}
+                  className="relative inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-300 transition-all duration-200 hover:bg-rose-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-rose-950/20"
+                >
+                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                  </span>
+                  <Plus className="w-4 h-4 text-rose-400" />
+                  Lapor Gangguan
+                </button>
+                <button
+                  onClick={() => setShowInfoTooltip((v) => !v)}
+                  className="ml-1 inline-flex items-center justify-center w-6 h-6 rounded-full border border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40 transition"
+                  title="Cara melaporkan gangguan"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+                {showInfoTooltip && (
+                  <div className="absolute top-12 right-0 z-[600] w-72 rounded-2xl border border-cyan-500/20 bg-slate-950 shadow-2xl shadow-cyan-950/30 p-4">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Info className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                        <p className="text-sm font-bold text-white">Cara Lapor Gangguan</p>
+                      </div>
+                      <button onClick={() => setShowInfoTooltip(false)} className="text-zinc-500 hover:text-white transition"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="space-y-2 text-xs text-zinc-400 leading-relaxed">
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">1.</span><p>Klik tombol <span className="text-rose-300 font-semibold">Lapor Gangguan</span> di sebelah kiri.</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">2.</span><p>Isi formulir: nama, lokasi kejadian, dan deskripsi masalah koneksi.</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">3.</span><p>Laporan dikirim ke tim UPT TI dan ditangani sesuai antrean (<span className="text-indigo-300 font-semibold">sistem tiket</span>).</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">4.</span><p>Pantau status melalui tombol <span className="text-indigo-300 font-semibold">Status Tiket</span>.</p></div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-zinc-500">Tiket = nomor antrian penanganan</div>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => (window.location.href = "/status-board")}
+                className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-sm font-semibold text-indigo-300 transition-all duration-200 hover:bg-indigo-500/20 hover:scale-[1.02] cursor-pointer"
+              >
+                <MessageSquare className="w-4 h-4 text-indigo-400" />
+                Status Tiket
+              </button>
+              <button
+                onClick={() => (window.location.href = "/login")}
+                className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-200 transition-all hover:bg-cyan-500/20 hover:scale-[1.02] cursor-pointer"
+              >
+                <Shield className="w-4 h-4 text-cyan-400" />
+                Admin
+              </button>
+              <button
+                onClick={toggleTheme}
+                className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl border transition ${
+                  isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-slate-300 bg-white/80 text-slate-600 hover:bg-white'
+                }`}
+                title={isDark ? 'Mode Terang' : 'Mode Gelap'}
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-2xl border border-zinc-700 bg-zinc-900/80 text-zinc-200 transition hover:bg-zinc-800"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+
         </div>
       </header>
 
-      <main className="mx-auto px-4 py-4 md:px-6 md:py-8 relative z-0">
+      {/* ── Mobile Floating Bottom Bar ─────────────────────────────── */}
+      {isMobile && (
+        <div className={`fixed bottom-4 left-4 right-4 z-[800] lg:hidden pub-mobile-safe`}>
+          <div className={`rounded-[2rem] shadow-2xl backdrop-blur-xl border flex items-center justify-around py-2 px-1 ${
+            isDark
+              ? 'bg-slate-950/95 border-white/10 shadow-cyan-950/30'
+              : 'bg-white/96 border-black/8 shadow-slate-200/80'
+          }`}>
+            {/* Peta — tutup semua drawer, kembali ke peta */}
+            <button
+              onClick={() => {
+                setLeftExpanded(false);
+                setRightExpanded(false);
+                setSelectedId(null);
+              }}
+              className={`flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-all ${
+                !leftExpanded && !rightExpanded
+                  ? isDark ? 'bg-cyan-500/15 text-cyan-300' : 'bg-cyan-50 text-cyan-700'
+                  : isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <Globe className="w-5 h-5" />
+              <span className="text-[10px] font-semibold">Peta</span>
+            </button>
+            {/* Cari — tutup drawer detail dulu */}
+            <button
+              onClick={() => {
+                setRightExpanded(false);
+                setLeftExpanded(true);
+              }}
+              className={`flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-all ${
+                leftExpanded && !rightExpanded
+                  ? isDark ? 'bg-cyan-500/15 text-cyan-300' : 'bg-cyan-50 text-cyan-700'
+                  : isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <Search className="w-5 h-5" />
+              <span className="text-[10px] font-semibold">Cari</span>
+            </button>
+            {/* Tiket — status board */}
+            <button
+              onClick={() => (window.location.href = '/status-board')}
+              className={`flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-all ${
+                isDark ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-500 hover:text-indigo-600'
+              }`}
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span className="text-[10px] font-semibold">Tiket</span>
+            </button>
+            {/* Lapor */}
+            <button
+              onClick={() => (window.location.href = '/report')}
+              className={`relative flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-all ${
+                isDark ? 'text-rose-400 hover:text-rose-300' : 'text-rose-500 hover:text-rose-600'
+              }`}
+            >
+              <span className="absolute top-1.5 right-3.5 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+              </span>
+              <Plus className="w-5 h-5" />
+              <span className="text-[10px] font-semibold">Lapor</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      <main className="mx-auto px-4 py-4 md:px-6 md:py-8 relative z-0 pb-28 lg:pb-8">
         <div className="grid gap-4 md:gap-6 grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
           <aside
             className={`rounded-[2rem] border border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10 transition-all duration-300 hidden lg:block ${leftExpanded ? "w-80 lg:w-80" : "w-16"}`}

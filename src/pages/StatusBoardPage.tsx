@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, Search, AlertCircle, ArrowLeft, Plus, MessageSquare, Clock } from 'lucide-react';
+import {
+  Wifi, Search, AlertCircle, ArrowLeft,
+  Plus, MessageSquare, Clock, MapPin, Sun, Moon,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { usePublicTheme } from '../hooks/usePublicTheme';
+import PublicBottomBar from '../components/PublicBottomBar';
 
 interface Ticket {
   id: number;
@@ -15,6 +20,8 @@ interface Ticket {
 
 export default function StatusBoardPage() {
   const navigate = useNavigate();
+  const { isDark, toggleTheme } = usePublicTheme();
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [lookupCode, setLookupCode] = useState('');
@@ -26,10 +33,7 @@ export default function StatusBoardPage() {
     try {
       const baseUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${baseUrl}/api/tickets/public`);
-      if (response.ok) {
-        const data = await response.json();
-        setTickets(data);
-      }
+      if (response.ok) setTickets(await response.json());
     } catch (err) {
       console.error(err);
     } finally {
@@ -37,21 +41,13 @@ export default function StatusBoardPage() {
     }
   };
 
-  useEffect(() => {
-    fetchPublicTickets();
-  }, []);
+  useEffect(() => { fetchPublicTickets(); }, []);
 
   const handleLookup = (e: React.FormEvent) => {
     e.preventDefault();
     const formatted = lookupCode.trim().toUpperCase();
-    if (!formatted) {
-      toast.error('Masukkan kode tiket terlebih dahulu');
-      return;
-    }
-    if (!formatted.startsWith('TCK-')) {
-      toast.error('Format kode tiket salah. Contoh: TCK-123456');
-      return;
-    }
+    if (!formatted) { toast.error('Masukkan kode tiket terlebih dahulu'); return; }
+    if (!formatted.startsWith('TCK-')) { toast.error('Format kode tiket salah. Contoh: TCK-123456'); return; }
     navigate(`/ticket/${formatted}`);
   };
 
@@ -73,50 +69,78 @@ export default function StatusBoardPage() {
   };
 
   const filteredTickets = tickets.filter(t => {
-    const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           t.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === 'all' || t.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
+  /* ── Theming helpers ── */
+  const page    = isDark ? 'bg-[#08111f] text-zinc-100' : 'bg-[#eef2f9] text-slate-900 pub-light';
+  const header  = isDark ? 'border-white/10 bg-slate-950/80' : 'border-black/8 bg-white/92';
+  const card    = isDark ? 'bg-slate-900/60 border-zinc-800' : 'bg-white/90 border-black/8';
+  const cardHov = isDark ? 'hover:border-zinc-700/60' : 'hover:border-slate-300';
+  const muted   = isDark ? 'text-zinc-400' : 'text-slate-500';
+  const subtle  = isDark ? 'text-zinc-500' : 'text-slate-400';
+  const inputCls = isDark
+    ? 'bg-zinc-950/80 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'
+    : 'bg-white border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400';
+
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-zinc-100 font-sans flex flex-col justify-between relative overflow-hidden">
-      {/* Ambient background glows */}
+    <div className={`min-h-screen font-sans flex flex-col transition-colors duration-300 ${page}`}>
+      {/* Ambient glows */}
       <div className="fixed top-0 right-1/4 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[120px] pointer-events-none" />
       <div className="fixed bottom-0 left-1/4 w-[600px] h-[600px] bg-rose-500/5 rounded-full blur-[140px] pointer-events-none" />
 
-      {/* Header */}
-      <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50 shrink-0">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      {/* Mobile bottom bar */}
+      <PublicBottomBar isDark={isDark} active="ticket" />
+
+      {/* ── Header ── */}
+      <header className={`sticky top-0 z-[500] border-b backdrop-blur-xl shrink-0 ${header}`}>
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
+          {/* Left: back + title */}
           <div className="flex items-center gap-3">
-            <a href="/" className="p-2 hover:bg-zinc-800/50 rounded-xl text-zinc-400 hover:text-white transition-all">
-              <ArrowLeft className="w-5 h-5" />
-            </a>
-            <div>
-              <h1 className="text-sm font-bold tracking-tight">Status Board Gangguan</h1>
-              <p className="text-[10px] text-zinc-500">Institut Teknologi Adhi Tama Surabaya</p>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                <MapPin className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div>
+                <p className={`text-[9px] uppercase tracking-[0.3em] font-semibold leading-none ${isDark ? 'text-indigo-400/70' : 'text-indigo-500/70'}`}>ITATS Portal</p>
+                <h1 className="text-sm font-bold tracking-tight leading-tight">Status Board Gangguan</h1>
+              </div>
             </div>
           </div>
-          <a
-            href="/report"
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-all shadow-md shadow-rose-600/10"
-          >
-            <Plus className="w-3.5 h-3.5" /> Buat Laporan
-          </a>
+          {/* Right: Lapor + theme toggle */}
+          <div className="flex items-center gap-2">
+            <a
+              href="/report"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-all shadow-md shadow-rose-600/10"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Buat Laporan
+            </a>
+            <button
+              onClick={toggleTheme}
+              className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border transition ${isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-slate-200 bg-white/80 text-slate-600 hover:bg-white'}`}
+              title={isDark ? 'Mode Terang' : 'Mode Gelap'}
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-10 space-y-8 shrink-0">
-        
+      {/* ── Main Content ── */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 md:px-6 py-8 space-y-8 shrink-0 pb-28 lg:pb-8">
+
         {/* Ticket Lookup Card */}
-        <div className="p-6 bg-zinc-900/60 border border-zinc-800 rounded-3xl backdrop-blur-xl flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+        <div className={`p-5 md:p-6 rounded-3xl border backdrop-blur-xl flex flex-col md:flex-row items-center justify-between gap-5 shadow-xl ${card}`}>
           <div className="flex-1">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <h2 className="text-lg font-bold flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-indigo-400" /> Cek Status Tiket Anda
             </h2>
-            <p className="text-xs text-zinc-400 mt-1">
-              Masukkan kode tiket <code>TCK-XXXXXX</code> yang didapatkan saat mengirim pengaduan untuk memantau status atau membalas pesan admin.
+            <p className={`text-xs mt-1 ${muted}`}>
+              Masukkan kode tiket <code className="font-mono">TCK-XXXXXX</code> untuk memantau status atau membalas pesan admin.
             </p>
           </div>
           <form onSubmit={handleLookup} className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
@@ -125,32 +149,25 @@ export default function StatusBoardPage() {
               value={lookupCode}
               onChange={(e) => setLookupCode(e.target.value)}
               placeholder="Contoh: TCK-XYZ123"
-              className="w-full sm:w-64 bg-zinc-950/80 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl px-4 py-2.5 text-sm font-mono text-white outline-none transition-all placeholder:text-zinc-600"
+              className={`w-full sm:w-64 border rounded-xl px-4 py-2.5 text-sm font-mono outline-none transition-all ${inputCls}`}
             />
-            <button
-              type="submit"
-              className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-2 whitespace-nowrap"
-            >
+            <button type="submit"
+              className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-2 whitespace-nowrap">
               <Search className="w-4 h-4" /> Cari Tiket
             </button>
           </form>
         </div>
 
-        {/* Known Issues list */}
+        {/* Ticket List */}
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h3 className="font-bold text-white text-base">Daftar Gangguan & Laporan Publik</h3>
-              <p className="text-xs text-zinc-500">Kumpulan laporan dari sivitas akademika untuk transparansi sistem.</p>
+              <h3 className="font-bold text-base">Daftar Gangguan &amp; Laporan Publik</h3>
+              <p className={`text-xs ${subtle}`}>Kumpulan laporan dari sivitas akademika untuk transparansi sistem.</p>
             </div>
-            
-            {/* Controls */}
             <div className="flex items-center gap-3 w-full sm:w-auto">
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2 outline-none focus:border-rose-500 cursor-pointer"
-              >
+              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
+                className={`border text-xs rounded-xl px-3 py-2 outline-none cursor-pointer transition-all ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-300 focus:border-rose-500' : 'bg-white border-slate-200 text-slate-600 focus:border-rose-400'}`}>
                 <option value="all">Semua Kategori</option>
                 <option value="wifi">Wi-Fi</option>
                 <option value="lan">LAN</option>
@@ -158,16 +175,12 @@ export default function StatusBoardPage() {
                 <option value="portal_login">Login Portal</option>
                 <option value="other">Lainnya</option>
               </select>
-
               <div className="relative flex-1 sm:flex-none">
-                <input
-                  type="text"
-                  placeholder="Cari Laporan..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full sm:w-48 bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder:text-zinc-600 text-xs rounded-xl pl-8 pr-3 py-2 outline-none focus:border-rose-500"
+                <input type="text" placeholder="Cari Laporan..."
+                  value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                  className={`w-full sm:w-48 border text-xs rounded-xl pl-8 pr-3 py-2 outline-none transition-all ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-300 placeholder:text-zinc-600 focus:border-rose-500' : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-rose-400'}`}
                 />
-                <Search className="w-3.5 h-3.5 text-zinc-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <Search className={`w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 ${subtle}`} />
               </div>
             </div>
           </div>
@@ -177,37 +190,29 @@ export default function StatusBoardPage() {
               <div className="w-8 h-8 border-2 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
             </div>
           ) : filteredTickets.length === 0 ? (
-            <div className="p-12 text-center bg-zinc-900/20 border border-zinc-800/40 rounded-3xl">
-              <AlertCircle className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-              <p className="text-zinc-400 font-medium">Tidak ada laporan gangguan yang aktif.</p>
-              <p className="text-xs text-zinc-600 mt-1">Jaringan terpantau beroperasi secara normal.</p>
+            <div className={`p-12 text-center rounded-3xl border ${isDark ? 'bg-zinc-900/20 border-zinc-800/40' : 'bg-white/50 border-slate-200'}`}>
+              <AlertCircle className={`w-12 h-12 mx-auto mb-4 ${subtle}`} />
+              <p className={`font-medium ${muted}`}>Tidak ada laporan gangguan yang aktif.</p>
+              <p className={`text-xs mt-1 ${subtle}`}>Jaringan terpantau beroperasi secara normal.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredTickets.map((t) => (
-                <div
-                  key={t.id}
-                  className="p-6 bg-zinc-900/40 border border-zinc-800/50 rounded-2xl flex flex-col justify-between gap-4 hover:border-zinc-700/60 transition-all group cursor-pointer"
-                  onClick={() => navigate(`/ticket/${t.ticket_code}`)}
-                >
+                <div key={t.id}
+                  className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition-all group cursor-pointer ${card} ${cardHov}`}
+                  onClick={() => navigate(`/ticket/${t.ticket_code}`)}>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-[10px] text-zinc-500 font-mono tracking-wider font-bold uppercase">{t.ticket_code}</span>
-                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${getStatusBadge(t.status)}`}>
-                        {t.status}
-                      </span>
+                      <span className={`text-[10px] font-mono tracking-wider font-bold uppercase ${subtle}`}>{t.ticket_code}</span>
+                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${getStatusBadge(t.status)}`}>{t.status}</span>
                     </div>
                     <div>
-                      <h4 className="font-bold text-white group-hover:text-rose-400 transition-colors text-sm truncate">{t.title}</h4>
-                      <p className="text-xs text-zinc-400 leading-relaxed mt-1 line-clamp-3">{t.description}</p>
+                      <h4 className={`font-bold text-sm truncate group-hover:text-rose-400 transition-colors`}>{t.title}</h4>
+                      <p className={`text-xs leading-relaxed mt-1 line-clamp-3 ${muted}`}>{t.description}</p>
                     </div>
                   </div>
-
-                  <div className="pt-3 border-t border-zinc-800/60 flex items-center justify-between text-[10px] text-zinc-500">
-                    <span className="flex items-center gap-1">
-                      <Wifi className="w-3.5 h-3.5 text-zinc-500" />
-                      {getCategoryLabel(t.category)}
-                    </span>
+                  <div className={`pt-3 border-t flex items-center justify-between text-[10px] ${subtle} ${isDark ? 'border-zinc-800/60' : 'border-slate-200'}`}>
+                    <span className="flex items-center gap-1"><Wifi className="w-3.5 h-3.5" />{getCategoryLabel(t.category)}</span>
                     <span className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
                       {new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -220,9 +225,10 @@ export default function StatusBoardPage() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 py-6 shrink-0 mt-8">
-        <p className="text-center text-[10px] text-zinc-700">© {new Date().getFullYear()} ITATS Network Monitor — Sistem Tiket Pengaduan Gangguan</p>
+      <footer className={`border-t py-5 shrink-0 mt-8 ${isDark ? 'border-white/5' : 'border-black/5'}`}>
+        <p className={`text-center text-[10px] ${isDark ? 'text-zinc-700' : 'text-slate-400'}`}>
+          © {new Date().getFullYear()} ITATS Network Monitor — Sistem Tiket Pengaduan Gangguan
+        </p>
       </footer>
     </div>
   );
