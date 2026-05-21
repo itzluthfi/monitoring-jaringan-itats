@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import {
   Search,
@@ -13,6 +13,16 @@ import {
   ChevronRight,
   Plus,
   MessageSquare,
+  CheckCircle,
+  AlertTriangle,
+  Clock,
+  Zap,
+  Users,
+  Building2,
+  Cpu,
+  ArrowDownUp,
+  Info,
+  X,
 } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
@@ -32,34 +42,73 @@ interface PublicMapBuilding {
   name: string;
   lat: number;
   lng: number;
-  hasWifi: boolean;
   online?: boolean;
-  status?: string;
-  total_clients?: number;
-  total_capacity?: number;
+  user_count?: number;
+  device_count?: number;
+  device_categories?: Array<{ label: string; count: number }>;
   density?: number;
   load_label?: string;
+  bandwidth_download?: string | null;
+  bandwidth_upload?: string | null;
   floors: Array<{
     level: string;
-    rooms: Array<{
-      id: string;
+    areas: Array<{
       name: string;
-      cap: number;
       current: number;
-      status?: string;
+      online: boolean;
     }>;
   }>;
 }
 
 interface PublicStatus {
-  devices: { total: number; online: number; offline: number; unknown: number };
-  criticalAlerts: number;
+  network: { total: number; online: number; offline: number };
+  hasActiveAlerts: boolean;
   recentIssues: Array<{
-    device_name: string;
     type: string;
     title: string;
-    created_at: string;
+    time: string;
   }>;
+  lastUpdated?: string;
+}
+
+const sanitizePublicName = (name: string): string => {
+  if (!name) return "";
+  let clean = name;
+
+  // If the whole name is specifically router core or eth interfaces
+  const lower = clean.toLowerCase();
+  if (lower === "router core") return "Pusat Jaringan";
+  if (lower === "eth interfaces") return "Sistem Jaringan Utama";
+
+  // Replace case-insensitive "mikrotik"
+  clean = clean.replace(/mikrotik/gi, "");
+
+  // Replace other technical jargon
+  clean = clean.replace(/router\s*core/gi, "Pusat Jaringan");
+  clean = clean.replace(/eth\s*interfaces?/gi, "Koneksi Jaringan");
+  clean = clean.replace(/ethernet/gi, "Koneksi Kabel");
+
+  // Clean up dashes, underscores, and extra spaces
+  clean = clean.replace(/[-_\s]+/g, " ").trim();
+
+  return clean || "Perangkat Jaringan";
+};
+
+const CAMPUS_BOUNDS = L.latLngBounds(
+  [-7.294, 112.774], // Southwest
+  [-7.287, 112.784]  // Northeast
+);
+
+function MapUpdater({ selectedBuilding }: { selectedBuilding: any | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (selectedBuilding) {
+      map.setView([selectedBuilding.lat, selectedBuilding.lng], 18);
+    } else {
+      map.setView([-7.2908, 112.779], 17);
+    }
+  }, [selectedBuilding, map]);
+  return null;
 }
 
 export default function PublicMapPage() {
@@ -71,19 +120,31 @@ export default function PublicMapPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedBuilding, setSelectedBuilding] =
     useState<PublicMapBuilding | null>(null);
-  const [leftExpanded, setLeftExpanded] = useState(true);
-  const [rightExpanded, setRightExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [leftExpanded, setLeftExpanded] = useState(window.innerWidth >= 1024);
+  const [rightExpanded, setRightExpanded] = useState(window.innerWidth >= 1024);
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [showInfoTooltip, setShowInfoTooltip] = useState(false);
 
   const baseUrl = import.meta.env.VITE_API_URL || "";
 
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setLeftExpanded(true);
+        setRightExpanded(true);
+      } else {
+        setLeftExpanded(false);
+        if (!selectedId) {
+          setRightExpanded(false);
+        }
+      }
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, [selectedId]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -99,6 +160,7 @@ export default function PublicMapPage() {
 
         console.log("MAP DATA:", mapJson);
         setStatus(statusJson);
+        setLastRefresh(new Date());
         if (Array.isArray(mapJson)) {
           setBuildings(mapJson);
           setSelectedBuilding((prev) => {
@@ -123,20 +185,23 @@ export default function PublicMapPage() {
   useEffect(() => {
     if (!selectedId) {
       setSelectedBuilding(null);
-      setRightExpanded(false);
+      if (isMobile) {
+        setRightExpanded(false);
+      }
       return;
     }
     const found = buildings.find((b) => b.id === selectedId);
     setSelectedBuilding(found || null);
     setRightExpanded(true);
-  }, [selectedId, buildings]);
+  }, [selectedId, buildings, isMobile]);
 
   const filteredBuildings = buildings.filter(
     (b) =>
       b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      sanitizePublicName(b.name).toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.floors.some((floor) =>
-        floor.rooms.some((room) =>
-          room.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        floor.areas.some((area) =>
+          area.name.toLowerCase().includes(searchTerm.toLowerCase()),
         ),
       ),
   );
@@ -144,30 +209,13 @@ export default function PublicMapPage() {
   const sortedBuildings = [...filteredBuildings].sort((a, b) => {
     const aDensity = a.density ?? 0;
     const bDensity = b.density ?? 0;
-    return (
-      bDensity - aDensity || (b.total_clients ?? 0) - (a.total_clients ?? 0)
-    );
+    return bDensity - aDensity || (b.user_count ?? 0) - (a.user_count ?? 0);
   });
 
-  const totalCapacity = buildings.reduce(
-    (acc, building) =>
-      acc +
-      building.floors.reduce(
-        (fa, floor) => fa + floor.rooms.reduce((ra, room) => ra + room.cap, 0),
-        0,
-      ),
-    0,
-  );
-  const totalCurrent = buildings.reduce(
-    (acc, building) =>
-      acc +
-      building.floors.reduce(
-        (fa, floor) =>
-          fa + floor.rooms.reduce((ra, room) => ra + room.current, 0),
-        0,
-      ),
-    0,
-  );
+  // Aggregate totals across all buildings
+  const totalCurrent = buildings.reduce((acc, b) => acc + (b.user_count ?? 0), 0);
+  const totalDevices = buildings.reduce((acc, b) => acc + (b.device_count ?? 0), 0);
+  const totalCapacity = 0; // Not used (was always 0)
 
   const getDensityColor = (building: PublicMapBuilding) => {
     if (!building.online) return "#9ca3af"; // gray for offline
@@ -179,13 +227,13 @@ export default function PublicMapPage() {
 
   const getDensityLabel = (building: PublicMapBuilding) => {
     if (!building.online) return "Offline";
-    return building.load_label || (building.density ?? 0) >= 90
-      ? "Sangat Ramai"
-      : (building.density ?? 0) >= 70
-        ? "Ramai"
-        : (building.density ?? 0) >= 40
-          ? "Sedang"
-          : "Ringan";
+    // Use load_label from API (already computed correctly in backend)
+    if (building.load_label) return building.load_label;
+    const d = building.density ?? 0;
+    if (d >= 90) return "Sangat Ramai";
+    if (d >= 70) return "Ramai";
+    if (d >= 40) return "Sedang";
+    return "Ringan";
   };
 
   const getStatusLabelClass = (building: PublicMapBuilding) =>
@@ -202,8 +250,8 @@ export default function PublicMapPage() {
 
   const getWifiIcon = (building: PublicMapBuilding) => {
     const fillColor = getDensityColor(building);
-    const label = building.name || "Wi-Fi";
-    const clients = building.total_clients ?? 0;
+    const label = sanitizePublicName(building.name) || "Wi-Fi";
+    const clients = building.user_count ?? 0;
     const isOffline = !building.online;
     const labelColor = isOffline ? "#9ca3af" : "#f8fafc";
     const html = `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;max-width:120px;">
@@ -229,11 +277,14 @@ export default function PublicMapPage() {
     });
   };
 
+  const isAllGood = status && status.network?.offline === 0 && !status.hasActiveAlerts;
+  const hasIssues = status && (status.network?.offline > 0 || status.hasActiveAlerts);
+
   return (
     <div className="min-h-screen bg-[#08111f] text-zinc-100 font-sans">
       {/* Mobile Search Drawer */}
       {leftExpanded && isMobile && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-xl lg:hidden">
+        <div className="fixed inset-0 z-[700] flex flex-col bg-slate-950/95 backdrop-blur-xl lg:hidden">
           <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
             <h2 className="text-lg font-semibold">Cari Area</h2>
             <button
@@ -267,11 +318,11 @@ export default function PublicMapPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-white">
-                        {building.name}
+                        {sanitizePublicName(building.name)}
                       </p>
                       <p className="text-xs text-zinc-500 mt-1">
-                        {building.density ?? 0}% • {building.total_clients ?? 0}{" "}
-                        klien
+                        {building.density ?? 0}% • {building.user_count ?? 0}{" "}
+                        pengguna
                       </p>
                     </div>
                     <span
@@ -294,7 +345,7 @@ export default function PublicMapPage() {
 
       {/* Mobile Detail Drawer */}
       {rightExpanded && isMobile && selectedBuilding && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-xl lg:hidden">
+        <div className="fixed inset-0 z-[700] flex flex-col bg-slate-950/95 backdrop-blur-xl lg:hidden">
           <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
             <h2 className="text-lg font-semibold">Detail Area</h2>
             <button
@@ -310,7 +361,7 @@ export default function PublicMapPage() {
                 Lokasi
               </p>
               <p className="mt-2 text-lg font-semibold text-white">
-                {selectedBuilding.name}
+                {sanitizePublicName(selectedBuilding.name)}
               </p>
               <p
                 className={`mt-1 text-xs uppercase tracking-[0.2em] ${getStatusLabelClass(selectedBuilding)}`}
@@ -319,31 +370,78 @@ export default function PublicMapPage() {
               </p>
             </div>
             <div className="grid gap-3">
-              <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                  Klien Saat Ini
-                </p>
-                <p className="mt-3 text-3xl font-bold text-white">
-                  {selectedBuilding.total_clients ?? 0}
-                </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
+                  </div>
+                  <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.user_count ?? 0}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">mahasiswa &amp; tamu</p>
+                </div>
+                <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Building2 className="w-3.5 h-3.5 text-zinc-400" />
+                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
+                  </div>
+                  <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.device_count ?? 0}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">milik kampus</p>
+                </div>
               </div>
               <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                  Kepadatan
-                </p>
-                <p className="mt-3 text-3xl font-bold text-white">
-                  {selectedBuilding.density ?? 0}%
-                </p>
-                <p className="text-xs text-zinc-500 mt-2">
-                  {getDensityLabel(selectedBuilding)}
-                </p>
+                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Keramaian</p>
+                <div className="flex items-center gap-3 mt-3">
+                  <p className={`text-2xl font-bold ${
+                    (selectedBuilding.density ?? 0) >= 90 ? "text-rose-300" :
+                    (selectedBuilding.density ?? 0) >= 70 ? "text-amber-300" : "text-emerald-300"
+                  }`}>{selectedBuilding.density ?? 0}%</p>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    (selectedBuilding.density ?? 0) >= 90 ? "bg-rose-500/20 text-rose-300" :
+                    (selectedBuilding.density ?? 0) >= 70 ? "bg-amber-500/20 text-amber-300" :
+                    "bg-emerald-500/20 text-emerald-300"
+                  }`}>{getDensityLabel(selectedBuilding)}</span>
+                </div>
               </div>
+              {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 && (
+                <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Cpu className="w-3.5 h-3.5 text-zinc-400" />
+                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Detail Perangkat Kampus</p>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedBuilding.device_categories.map((cat) => (
+                      <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
+                        <span className="text-xs text-zinc-300">{cat.label}</span>
+                        <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {selectedBuilding.online && (selectedBuilding.bandwidth_download || selectedBuilding.bandwidth_upload) && (
+                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ArrowDownUp className="w-3.5 h-3.5 text-cyan-400" />
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Bandwidth</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-zinc-500">↓ Download</p>
+                      <p className="text-sm font-bold text-white mt-0.5">{selectedBuilding.bandwidth_download ?? "–"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-zinc-500">↑ Upload</p>
+                      <p className="text-sm font-bold text-white mt-0.5">{selectedBuilding.bandwidth_upload ?? "–"}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-[500] border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
         <div className="mx-auto px-4 md:px-6 py-4 flex flex-col gap-3 md:gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
@@ -380,30 +478,80 @@ export default function PublicMapPage() {
                 )}
               </>
             )}
-            <button
-              onClick={() => (window.location.href = "/report")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Lapor Gangguan
-            </button>
+            {/* Info tooltip tentang cara lapor */}
+            <div className="relative">
+              <button
+                onClick={() => (window.location.href = "/report")}
+                className="relative inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-rose-300 transition-all duration-200 hover:bg-rose-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-rose-950/20"
+              >
+                <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+                <Plus className="w-4 h-4 text-rose-400" />
+                <span className="hidden sm:inline">Lapor Gangguan</span>
+                <span className="sm:hidden">Lapor</span>
+              </button>
+              <button
+                onClick={() => setShowInfoTooltip((v) => !v)}
+                className="ml-1 inline-flex items-center justify-center w-6 h-6 rounded-full border border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40 transition"
+                title="Cara melaporkan gangguan"
+              >
+                <Info className="w-3.5 h-3.5" />
+              </button>
+              {showInfoTooltip && (
+                <div className="absolute top-12 right-0 z-[600] w-72 rounded-2xl border border-cyan-500/20 bg-slate-950 shadow-2xl shadow-cyan-950/30 p-4">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Info className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                      <p className="text-sm font-bold text-white">Cara Lapor Gangguan</p>
+                    </div>
+                    <button onClick={() => setShowInfoTooltip(false)} className="text-zinc-500 hover:text-white transition">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-2 text-xs text-zinc-400 leading-relaxed">
+                    <div className="flex gap-2">
+                      <span className="text-cyan-400 font-bold flex-shrink-0">1.</span>
+                      <p>Klik tombol <span className="text-rose-300 font-semibold">Lapor Gangguan</span> di sebelah kiri.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-cyan-400 font-bold flex-shrink-0">2.</span>
+                      <p>Isi formulir: nama, lokasi kejadian, dan deskripsi masalah koneksi.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-cyan-400 font-bold flex-shrink-0">3.</span>
+                      <p>Laporan dikirim ke tim UPT TI dan akan ditangani sesuai antrean (<span className="text-indigo-300 font-semibold">sistem tiket</span>).</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-cyan-400 font-bold flex-shrink-0">4.</span>
+                      <p>Pantau status laporan kamu melalui tombol <span className="text-indigo-300 font-semibold">Status Tiket</span>.</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-zinc-500">
+                    Tiket = nomor antrian penanganan — bukan yang lain 😊
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => (window.location.href = "/status-board")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/20 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-indigo-300 transition-all duration-200 hover:bg-indigo-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-indigo-950/20"
             >
-              <MessageSquare className="w-4 h-4" />
-              Status Tiket
+              <MessageSquare className="w-4 h-4 text-indigo-400" />
+              <span className="hidden sm:inline">Status Tiket</span>
+              <span className="sm:hidden">Tiket</span>
             </button>
             <button
               onClick={() => (window.location.href = "/login")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-3 md:px-4 py-2 text-sm font-semibold text-cyan-200 transition-all duration-200 hover:bg-cyan-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-cyan-950/20"
             >
-              <Shield className="w-4 h-4" />
+              <Shield className="w-4 h-4 text-cyan-400" />
               Admin
             </button>
             <button
               onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900/80 px-3 md:px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900/80 px-3 md:px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 hover:scale-[1.02] duration-200 cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -411,7 +559,7 @@ export default function PublicMapPage() {
         </div>
       </header>
 
-      <main className="mx-auto px-4 py-4 md:px-6 md:py-8">
+      <main className="mx-auto px-4 py-4 md:px-6 md:py-8 relative z-0">
         <div className="grid gap-4 md:gap-6 grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
           <aside
             className={`rounded-[2rem] border border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10 transition-all duration-300 hidden lg:block ${leftExpanded ? "w-80 lg:w-80" : "w-16"}`}
@@ -445,44 +593,48 @@ export default function PublicMapPage() {
             </div>
             {leftExpanded ? (
               <div className="space-y-5 p-4">
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                    Status Umum
+                {/* Support Card */}
+                <div className="relative overflow-hidden rounded-3xl border border-rose-500/25 bg-gradient-to-b from-rose-500/10 via-slate-950 to-slate-950 p-4 shadow-lg shadow-rose-950/10">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 animate-pulse" />
+                    <h3 className="text-xs font-bold uppercase tracking-[0.1em] text-rose-300">Ada Kendala Jaringan?</h3>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+                    Jika koneksi Wi-Fi atau internet di kampus terganggu, segera laporkan ke admin.
                   </p>
-                  <div className="mt-4 grid gap-3">
-                    <div className="rounded-3xl bg-zinc-950/90 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
-                        Online
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold text-emerald-300">
-                        {status?.devices.online ?? "-"}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl bg-zinc-950/90 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
-                        Offline
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold text-rose-300">
-                        {status?.devices.offline ?? "-"}
-                      </p>
-                    </div>
+                  <div className="mt-3.5 grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => (window.location.href = "/report")}
+                      className="flex items-center justify-center gap-1 rounded-xl bg-rose-500 hover:bg-rose-600 px-2.5 py-2 text-xs font-bold text-white transition-all shadow-md shadow-rose-500/10 hover:scale-[1.03] cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Lapor
+                    </button>
+                    <button
+                      onClick={() => (window.location.href = "/status-board")}
+                      className="flex items-center justify-center gap-1 rounded-xl border border-indigo-500/20 bg-indigo-500/10 hover:bg-indigo-500/20 px-2.5 py-2 text-xs font-bold text-indigo-300 transition-all hover:scale-[1.03] cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Status
+                    </button>
                   </div>
                 </div>
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                    Kapasitas Sekarang
-                  </p>
-                  <p className="mt-3 text-3xl font-bold text-white">
-                    {totalCurrent}/{totalCapacity}
-                  </p>
+                {/* Stats: Total Pengguna WiFi + Perangkat Kampus */}
+                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Total Pengguna WiFi</p>
+                  </div>
+                  <p className="text-3xl font-bold text-white">{totalCurrent}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">seluruh area kampus</p>
                 </div>
                 <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                    Gedung Tercatat
-                  </p>
-                  <p className="mt-3 text-3xl font-bold text-cyan-300">
-                    {buildings.length}
-                  </p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Building2 className="w-3.5 h-3.5 text-zinc-400" />
+                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat Kampus</p>
+                  </div>
+                  <p className="text-3xl font-bold text-white">{totalDevices}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">seluruh area kampus</p>
                 </div>
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-3">
@@ -519,11 +671,11 @@ export default function PublicMapPage() {
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-white">
-                            {building.name}
+                            {sanitizePublicName(building.name)}
                           </p>
                           <p className="text-xs text-zinc-500 mt-1">
                             {building.density ?? 0}% •{" "}
-                            {building.total_clients ?? 0} klien
+                            {building.user_count ?? 0} pengguna
                           </p>
                         </div>
                         <span
@@ -552,7 +704,7 @@ export default function PublicMapPage() {
                     Online
                   </p>
                   <p className="mt-2 md:mt-3 text-2xl md:text-3xl font-bold text-emerald-300">
-                    {status?.devices.online ?? "-"}
+                    {status?.network?.online ?? "-"}
                   </p>
                 </div>
                 <div className="rounded-3xl border border-zinc-800 bg-slate-900/90 p-3 md:p-5">
@@ -560,7 +712,7 @@ export default function PublicMapPage() {
                     Offline
                   </p>
                   <p className="mt-2 md:mt-3 text-2xl md:text-3xl font-bold text-amber-300">
-                    {status?.devices.offline ?? "-"}
+                    {status?.network?.offline ?? "-"}
                   </p>
                 </div>
                 <div className="rounded-3xl border border-zinc-800 bg-slate-900/90 p-3 md:p-5 col-span-2 md:col-span-1">
@@ -574,8 +726,9 @@ export default function PublicMapPage() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 overflow-hidden shadow-2xl shadow-cyan-500/10">
-              <div className="h-[50vh] min-h-[320px] md:h-[76vh] md:min-h-[560px] relative">
+            {/* Map container — isolation prevents Leaflet z-index from bleeding outside */}
+            <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 overflow-hidden shadow-2xl shadow-cyan-500/10" style={{isolation: 'isolate'}}>
+              <div className="h-[42vh] min-h-[280px] md:h-[58vh] md:min-h-[440px] relative">
                 {mapLoading ? (
                   <div className="flex h-full items-center justify-center bg-slate-950 text-zinc-400">
                     Memuat peta...
@@ -584,9 +737,14 @@ export default function PublicMapPage() {
                   <MapContainer
                     center={[-7.2908, 112.779]}
                     zoom={17}
+                    minZoom={17}
+                    maxZoom={20}
+                    maxBounds={CAMPUS_BOUNDS}
+                    maxBoundsViscosity={1.0}
                     scrollWheelZoom={true}
                     style={{ height: "100%", width: "100%" }}
                   >
+                    <MapUpdater selectedBuilding={selectedBuilding} />
                     <TileLayer
                       attribution="&copy; OpenStreetMap contributors"
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -605,6 +763,103 @@ export default function PublicMapPage() {
                 )}
               </div>
             </div>
+
+            {/* Mobile status & info sections */}
+            {isMobile && (
+              <div className="space-y-4">
+                {/* Status banner */}
+                <div className={`rounded-[2rem] border p-4 transition-all duration-300 ${
+                  isAllGood
+                    ? "bg-emerald-500/5 border-emerald-500/20 shadow-lg shadow-emerald-950/10"
+                    : hasIssues
+                    ? "bg-rose-500/5 border-rose-500/20 shadow-lg shadow-rose-950/10"
+                    : "bg-zinc-900/50 border-zinc-800"
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center border flex-shrink-0 ${
+                      isAllGood ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                      hasIssues ? "bg-rose-500/10 border-rose-500/20 text-rose-400 animate-pulse" :
+                      "bg-zinc-800 border-zinc-700 text-zinc-400"
+                    }`}>
+                      {isAllGood ? (
+                        <CheckCircle className="w-4.5 h-4.5" />
+                      ) : hasIssues ? (
+                        <AlertTriangle className="w-4.5 h-4.5" />
+                      ) : (
+                        <Activity className="w-4.5 h-4.5" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className={`text-xs font-bold uppercase tracking-wider ${
+                        isAllGood ? "text-emerald-400" : hasIssues ? "text-rose-400" : "text-zinc-400"
+                      }`}>
+                        {isAllGood ? "Jaringan Normal" : hasIssues ? "Gangguan Terdeteksi" : "Memuat Status..."}
+                      </h4>
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 font-medium">
+                        {isAllGood
+                          ? "Semua perangkat jaringan beroperasi penuh."
+                          : hasIssues
+                          ? `${status?.network?.offline} perangkat offline saat ini.`
+                          : "Menghubungkan ke server..."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Log Gangguan */}
+                <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 p-5 shadow-2xl">
+                  <div className="flex items-center gap-2 pb-3 border-b border-white/5 mb-3">
+                    <Activity className="w-4 h-4 text-cyan-400" />
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Log Gangguan Terkini</h4>
+                  </div>
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                    {status && status.recentIssues && status.recentIssues.length > 0 ? (
+                      status.recentIssues.map((issue, idx) => (
+                        <div key={idx} className="p-3 rounded-2xl bg-zinc-900/50 border border-white/5 flex flex-col gap-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${
+                              issue.type === 'critical' ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
+                            }`}>
+                              {issue.type === 'critical' ? 'Gangguan' : 'Info'}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 font-mono">
+                              {new Date(issue.time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-sm font-semibold text-zinc-200">{issue.title}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-6 text-center text-xs text-zinc-500">
+                        Tidak ada laporan gangguan aktif.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Panduan Bantuan */}
+                <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 p-5 shadow-2xl text-xs space-y-3">
+                  <div className="flex items-center gap-2 pb-3 border-b border-white/5">
+                    <Zap className="w-4 h-4 text-amber-400" />
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Panduan & Kontak</h4>
+                  </div>
+                  <div className="space-y-3 text-zinc-400 leading-relaxed">
+                    <p>
+                      <span className="inline-flex items-center gap-1 text-zinc-200 font-semibold"><MapPin className="w-3 h-3 text-cyan-400" /> Peta Interaktif:</span>{" "}
+                      Tekan marker Wi-Fi pada peta untuk melihat detail kapasitas dan access point di setiap gedung secara real-time.
+                    </p>
+                    <p>
+                      <span className="inline-flex items-center gap-1 text-zinc-200 font-semibold"><Users className="w-3 h-3 text-emerald-400" /> Status Keramaian:</span>{" "}
+                      Warna marker menunjukkan tingkat keramaian pengguna (Hijau: Ringan, Kuning: Sedang/Ramai, Merah: Sangat Ramai, Abu-abu: Offline).
+                    </p>
+                    <p>
+                      <span className="inline-flex items-center gap-1 text-zinc-200 font-semibold"><MessageSquare className="w-3 h-3 text-indigo-400" /> Pusat Bantuan UPT TI:</span>{" "}
+                      Mengalami kendala koneksi? Hubungi UPT TI ITATS di Gedung Rektorat Lt. 2 atau buat laporan melalui tombol <strong>Lapor Gangguan</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
 
           <aside
@@ -636,12 +891,19 @@ export default function PublicMapPage() {
               <div className="p-4 space-y-5">
                 {selectedBuilding ? (
                   <div className="space-y-5">
+                    <button
+                      onClick={() => setSelectedId(null)}
+                      className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition cursor-pointer pb-2"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      Kembali ke Ringkasan Jaringan
+                    </button>
                     <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
                         Lokasi
                       </p>
                       <p className="mt-2 text-lg font-semibold text-white">
-                        {selectedBuilding.name}
+                        {sanitizePublicName(selectedBuilding.name)}
                       </p>
                       <p
                         className={`mt-1 text-xs uppercase tracking-[0.2em] ${getStatusLabelClass(selectedBuilding)}`}
@@ -650,39 +912,83 @@ export default function PublicMapPage() {
                       </p>
                     </div>
                     <div className="grid gap-3">
-                      <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                          Klien Saat Ini
-                        </p>
-                        <p className="mt-3 text-3xl font-bold text-white">
-                          {selectedBuilding.total_clients ?? 0}
-                        </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Users className="w-3.5 h-3.5 text-cyan-400" />
+                            <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
+                          </div>
+                          <p className="mt-1 text-3xl font-bold text-white">
+                            {selectedBuilding.user_count ?? 0}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 mt-1">mahasiswa &amp; tamu</p>
+                        </div>
+                        <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Building2 className="w-3.5 h-3.5 text-zinc-400" />
+                            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
+                          </div>
+                          <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.device_count ?? 0}</p>
+                          <p className="text-[10px] text-zinc-500 mt-1">milik kampus</p>
+                        </div>
                       </div>
                       <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                          Kepadatan
-                        </p>
-                        <p className="mt-3 text-3xl font-bold text-white">
-                          {selectedBuilding.density ?? 0}%
-                        </p>
-                        <p className="text-xs text-zinc-500 mt-2">
-                          {getDensityLabel(selectedBuilding)}
-                        </p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Keramaian</p>
+                        <div className="flex items-center gap-3 mt-3">
+                          <p className={`text-2xl font-bold ${
+                            (selectedBuilding.density ?? 0) >= 70 ? "text-amber-300" :
+                            (selectedBuilding.density ?? 0) >= 90 ? "text-rose-300" : "text-emerald-300"
+                          }`}>
+                            {selectedBuilding.density ?? 0}%
+                          </p>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            (selectedBuilding.density ?? 0) >= 90 ? "bg-rose-500/20 text-rose-300" :
+                            (selectedBuilding.density ?? 0) >= 70 ? "bg-amber-500/20 text-amber-300" :
+                            "bg-emerald-500/20 text-emerald-300"
+                          }`}>{getDensityLabel(selectedBuilding)}</span>
+                        </div>
                       </div>
+                      {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 && (
+                        <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Cpu className="w-3.5 h-3.5 text-zinc-400" />
+                            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Detail Perangkat Kampus</p>
+                          </div>
+                          <div className="space-y-2">
+                            {selectedBuilding.device_categories.map((cat) => (
+                              <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
+                                <span className="text-xs text-zinc-300">{cat.label}</span>
+                                <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedBuilding.online && (selectedBuilding.bandwidth_download || selectedBuilding.bandwidth_upload) && (
+                        <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <ArrowDownUp className="w-3.5 h-3.5 text-cyan-400" />
+                            <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Bandwidth Real-time</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-[10px] text-zinc-500 uppercase tracking-wider">↓ Download</p>
+                              <p className="text-base font-bold text-white mt-1">{selectedBuilding.bandwidth_download ?? "–"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-zinc-500 uppercase tracking-wider">↑ Upload</p>
+                              <p className="text-base font-bold text-white mt-1">{selectedBuilding.bandwidth_upload ?? "–"}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                        Kapasitas Total
-                      </p>
-                      <p className="mt-3 text-2xl font-bold text-white">
-                        {selectedBuilding.total_capacity ?? 0}
-                      </p>
-                    </div>
+                    {/* Kapasitas Total dihapus — selalu 0 karena tidak dikonfigurasi */}
                     {selectedBuilding.floors &&
                       selectedBuilding.floors.length > 0 && (
                         <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
                           <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 mb-3">
-                            Access Point / Segment
+                            Titik Akses Wi-Fi / Sektor
                           </p>
                           <div className="space-y-3 max-h-[50vh] overflow-y-auto">
                             {selectedBuilding.floors.map((floor) => (
@@ -694,29 +1000,27 @@ export default function PublicMapPage() {
                                   {floor.level}
                                 </p>
                                 <div className="space-y-2">
-                                  {floor.rooms.map((room) => (
+                                  {floor.areas.map((area, aIdx) => (
                                     <div
-                                      key={room.id}
+                                      key={aIdx}
                                       className="flex items-center justify-between gap-2 text-xs bg-slate-900/50 rounded-lg p-2"
                                     >
                                       <div className="flex-1 min-w-0">
                                         <p className="font-semibold text-white truncate">
-                                          {room.name}
+                                          {area.name}
                                         </p>
                                         <p className="text-zinc-500 text-[10px]">
-                                          {room.current} / {room.cap} klien
+                                          {area.current} pengguna
                                         </p>
                                       </div>
                                       <span
                                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
-                                          room.status === "online"
+                                          area.online
                                             ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                                             : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
                                         }`}
                                       >
-                                        {room.status === "online"
-                                          ? "Online"
-                                          : "Offline"}
+                                        {area.online ? "Online" : "Offline"}
                                       </span>
                                     </div>
                                   ))}
@@ -728,14 +1032,105 @@ export default function PublicMapPage() {
                       )}
                   </div>
                 ) : (
-                  <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                    <p className="text-sm font-semibold text-white">
-                      Klik icon Wi-Fi untuk melihat detail.
-                    </p>
-                    <p className="mt-2 text-sm text-zinc-400">
-                      Panel ini akan menampilkan status, kepadatan, dan jumlah
-                      klien per area.
-                    </p>
+                  <div className="space-y-4">
+                    {/* Status Banner */}
+                    <div className={`rounded-3xl border p-4 transition-all duration-300 ${
+                      isAllGood
+                        ? "bg-emerald-500/5 border-emerald-500/20 shadow-lg shadow-emerald-950/10"
+                        : hasIssues
+                        ? "bg-rose-500/5 border-rose-500/20 shadow-lg shadow-rose-950/10"
+                        : "bg-zinc-900/50 border-zinc-800"
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center border flex-shrink-0 ${
+                          isAllGood ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                          hasIssues ? "bg-rose-500/10 border-rose-500/20 text-rose-400 animate-pulse" :
+                          "bg-zinc-800 border-zinc-700 text-zinc-400"
+                        }`}>
+                          {isAllGood ? (
+                            <CheckCircle className="w-4.5 h-4.5" />
+                          ) : hasIssues ? (
+                            <AlertTriangle className="w-4.5 h-4.5" />
+                          ) : (
+                            <Activity className="w-4.5 h-4.5" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className={`text-xs font-bold uppercase tracking-wider ${
+                            isAllGood ? "text-emerald-400" : hasIssues ? "text-rose-400" : "text-zinc-400"
+                          }`}>
+                            {isAllGood
+                              ? "Jaringan Normal"
+                              : hasIssues
+                              ? "Gangguan Terdeteksi"
+                              : "Memuat Status..."}
+                          </h4>
+                          <p className="text-[10px] text-zinc-400 truncate mt-0.5 font-medium">
+                            {isAllGood
+                              ? "Semua perangkat beroperasi penuh."
+                              : hasIssues
+                              ? `${status?.network?.offline} perangkat offline saat ini.`
+                              : "Menghubungkan ke server..."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Riwayat Gangguan Terkini */}
+                    <div className="rounded-3xl border border-zinc-800 bg-slate-900/50 p-4 space-y-3">
+                      <div className="flex items-center gap-2 pb-2 border-b border-white/5">
+                        <Activity className="w-4 h-4 text-cyan-400" />
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Log Gangguan Terkini</h4>
+                      </div>
+                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                        {status && status.recentIssues && status.recentIssues.length > 0 ? (
+                          status.recentIssues.map((issue, idx) => (
+                            <div key={idx} className="p-2.5 rounded-2xl bg-zinc-950/60 border border-white/5 flex flex-col gap-1 transition-all duration-200 hover:border-zinc-800">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
+                                  issue.type === 'critical' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                }`}>
+                                  {issue.type === 'critical' ? 'Gangguan' : 'Info'}
+                                </span>
+                                <span className="text-[9px] text-zinc-500 font-mono flex items-center gap-1">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  {new Date(issue.time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="text-xs font-semibold text-zinc-200 line-clamp-1">{issue.title}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="py-6 text-center text-[11px] text-zinc-500">
+                            Tidak ada laporan gangguan aktif.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Panduan Peta & Bantuan */}
+                    <div className="rounded-3xl border border-zinc-800 bg-slate-900/50 p-4 space-y-3">
+                      <div className="flex items-center gap-2 pb-2 border-b border-white/5">
+                        <Zap className="w-4 h-4 text-amber-400" />
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Panduan & Bantuan</h4>
+                      </div>
+                      <div className="space-y-2 text-[11px] text-zinc-400 leading-relaxed">
+                        <p>
+                          📍 <strong className="text-zinc-200">Peta Interaktif:</strong> Klik marker Wi-Fi pada peta untuk melihat detail kapasitas dan access point di setiap gedung secara real-time.
+                        </p>
+                        <p>
+                          🏢 <strong className="text-zinc-200">Status Keramaian:</strong> Warna marker menunjukkan tingkat keramaian pengguna (Hijau: Ringan, Kuning: Sedang/Ramai, Merah: Sangat Ramai, Abu-abu: Offline).
+                        </p>
+                        <p>
+                          📞 <strong className="text-zinc-200">Pusat Bantuan UPT TI:</strong> Mengalami kendala koneksi? Hubungi UPT TI ITATS di Gedung Rektorat Lt. 2 atau buat laporan melalui tombol <strong>Lapor Gangguan</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Footer Info */}
+                    <div className="text-[10px] text-zinc-600 text-center pt-2 font-mono">
+                      Terakhir diperbarui: {lastRefresh.toLocaleTimeString('id-ID')}
+                    </div>
                   </div>
                 )}
               </div>

@@ -21,6 +21,7 @@ import { controllersRouter } from './routes/controllers.route';
 import { adminsRouter } from './routes/admins.route';
 import { ticketsRouter } from './routes/tickets.route';
 import { requireAuth } from './middleware/auth';
+import { publicSecurityMiddleware } from './middleware/publicSecurity';
 
 dotenv.config();
 
@@ -65,8 +66,9 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRouter);
-app.use('/api/public', publicRouter);
-app.use('/api/tickets', ticketsRouter);
+// ── Public API (rate limited + security headers) ──────────────────────────────
+app.use('/api/public', publicSecurityMiddleware, publicRouter);
+app.use('/api/tickets', publicSecurityMiddleware, ticketsRouter);
 app.use('/uploads', express.static(path.join(process.cwd(), 'public/uploads')));
 
 // Protected routes

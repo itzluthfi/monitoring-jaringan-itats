@@ -2,7 +2,6 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import PublicMapPage from "./pages/PublicMapPage";
-import PublicPage from "./pages/PublicPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { RequireAuth, AlreadyLoggedIn } from "./components/auth/RequireAuth";
@@ -51,12 +50,6 @@ export default function Router() {
       <Routes>
         {/* ── Public Routes ─────────── */}
         <Route path="/" element={<PublicMapPage />} />
-        <Route
-          path="/public"
-          element={
-            <PublicPage onGoToLogin={() => (window.location.href = "/login")} />
-          }
-        />
         <Route path="/report" element={<TicketForm />} />
         <Route path="/status-board" element={<StatusBoardPage />} />
         <Route path="/ticket/:code" element={<TicketChatPage />} />

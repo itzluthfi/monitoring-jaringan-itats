@@ -108,7 +108,7 @@ export default function TicketForm() {
       <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50 shrink-0">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <a href="/public" className="p-2 hover:bg-zinc-800/50 rounded-xl text-zinc-400 hover:text-white transition-all">
+            <a href="/" className="p-2 hover:bg-zinc-800/50 rounded-xl text-zinc-400 hover:text-white transition-all">
               <ArrowLeft className="w-5 h-5" />
             </a>
             <div>
