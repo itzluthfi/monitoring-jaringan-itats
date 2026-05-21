@@ -150,6 +150,7 @@ publicRouter.get("/campus-map", async (req, res) => {
           let userCount = 0;
           let deviceCount = 0;
           const deviceCategoryMap: Record<string, number> = {};
+          const userBreakdownMap: Record<string, number> = {};
           let bwRxBps = 0;
           let bwTxBps = 0;
 
@@ -197,6 +198,16 @@ publicRouter.get("/campus-map", async (req, res) => {
                   const lease = leaseMap[mac];
                   if (!lease || lease.dynamic) {
                     userCount++;
+                    // Classify user device type from hostname (anonymous — no ID exposed)
+                    const hn = (lease?.hostname || "").toLowerCase();
+                    let userType = "Perangkat Lainnya";
+                    if (/iphone|ipad|ios/.test(hn)) userType = "iPhone / iPad";
+                    else if (/android|samsung|xiaomi|redmi|oppo|vivo|huawei|pixel|realme|poco|honor|oneplus/.test(hn)) userType = "Android";
+                    else if (/macbook|mac-mini|macmini/.test(hn)) userType = "MacBook";
+                    else if (/laptop|notebook|thinkpad|lenovo|asus|dell|hp-notebook|ideapad/.test(hn)) userType = "Laptop";
+                    else if (/pc|desktop|windows|komputer/.test(hn)) userType = "Komputer";
+                    else if (!hn) userType = "Perangkat Tidak Dikenal";
+                    userBreakdownMap[userType] = (userBreakdownMap[userType] || 0) + 1;
                   } else {
                     deviceCount++;
                     const cat = classifyDevice(lease.hostname);
@@ -243,6 +254,11 @@ publicRouter.get("/campus-map", async (req, res) => {
             deviceCategoryMap["Access Point"] = Math.floor(Math.random() * 4) + 1;
             deviceCategoryMap["Komputer Kampus"] = Math.floor(Math.random() * 6) + 1;
             deviceCategoryMap["Printer"] = Math.floor(Math.random() * 2);
+            // Simulate user breakdown
+            userBreakdownMap["Android"] = Math.floor(userCount * 0.5);
+            userBreakdownMap["iPhone / iPad"] = Math.floor(userCount * 0.2);
+            userBreakdownMap["Laptop"] = Math.floor(userCount * 0.15);
+            userBreakdownMap["Perangkat Tidak Dikenal"] = userCount - Math.floor(userCount * 0.85);
             bwRxBps = Math.floor(Math.random() * 80_000_000);
             bwTxBps = Math.floor(Math.random() * 30_000_000);
           }
@@ -294,23 +310,28 @@ publicRouter.get("/campus-map", async (req, res) => {
             .map(([label, count]) => ({ label, count }))
             .sort((a, b) => b.count - a.count);
 
+          const user_breakdown = Object.entries(userBreakdownMap)
+            .filter(([, count]) => count > 0)
+            .map(([label, count]) => ({ label, count }))
+            .sort((a, b) => b.count - a.count);
+
           // ── RESPONSE PUBLIK BERSIH ────────────────────────────────────────
           // Yang DIKIRIM: nama (sudah sanitasi), koordinat (untuk peta),
           //   jumlah pengguna (agregat), bandwidth (label saja), status (boolean)
           // Yang TIDAK DIKIRIM: ID DB, nama "MikroTik", raw bytes, IP, MAC,
           //   hostname, total_capacity, hasWifi, status string (redundan)
           return {
-            id: `loc-${device.id}`,          // Obfuscated — bukan "dev-3"
-            name: sanitizeName(device.name), // "Gedung G Lantai 1" bukan "MIKROTIK GEDUNG G LANTAI 1"
+            id: `loc-${device.id}`,
+            name: sanitizeName(device.name),
             lat: device.lat,
             lng: device.lng,
             online,
             user_count: userCount,
+            user_breakdown,
             device_count: deviceCount,
             device_categories,
             density,
             load_label: loadLabel,
-            // Bandwidth — HANYA label manusiawi, bukan raw bytes
             bandwidth_download: online && bwRxBps > 0 ? formatBps(bwRxBps) : null,
             bandwidth_upload: online && bwTxBps > 0 ? formatBps(bwTxBps) : null,
             floors,

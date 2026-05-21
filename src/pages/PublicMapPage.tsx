@@ -44,6 +44,7 @@ interface PublicMapBuilding {
   lng: number;
   online?: boolean;
   user_count?: number;
+  user_breakdown?: Array<{ label: string; count: number }>;
   device_count?: number;
   device_categories?: Array<{ label: string; count: number }>;
   density?: number;
@@ -125,6 +126,8 @@ export default function PublicMapPage() {
   const [rightExpanded, setRightExpanded] = useState(window.innerWidth >= 1024);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [showInfoTooltip, setShowInfoTooltip] = useState(false);
+  const [showUserDetail, setShowUserDetail] = useState(false);
+  const [showDeviceDetail, setShowDeviceDetail] = useState(false);
 
   const baseUrl = import.meta.env.VITE_API_URL || "";
 
@@ -185,14 +188,15 @@ export default function PublicMapPage() {
   useEffect(() => {
     if (!selectedId) {
       setSelectedBuilding(null);
-      if (isMobile) {
-        setRightExpanded(false);
-      }
+      if (isMobile) setRightExpanded(false);
       return;
     }
     const found = buildings.find((b) => b.id === selectedId);
     setSelectedBuilding(found || null);
     setRightExpanded(true);
+    // Reset detail panels on building change
+    setShowUserDetail(false);
+    setShowDeviceDetail(false);
   }, [selectedId, buildings, isMobile]);
 
   const filteredBuildings = buildings.filter(
@@ -371,51 +375,80 @@ export default function PublicMapPage() {
             </div>
             <div className="grid gap-3">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-3.5 h-3.5 text-cyan-400" />
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
+                {/* Pengguna WiFi — klikable */}
+                <button
+                  onClick={() => setShowUserDetail((v) => !v)}
+                  className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-left transition hover:bg-cyan-500/10 active:scale-[0.97]"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-cyan-400" />
+                      <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
+                    </div>
+                    <ChevronRight className={`w-3.5 h-3.5 text-cyan-400 transition-transform ${showUserDetail ? "rotate-90" : ""}`} />
                   </div>
                   <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.user_count ?? 0}</p>
-                  <p className="text-[10px] text-zinc-500 mt-1">mahasiswa &amp; tamu</p>
-                </div>
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building2 className="w-3.5 h-3.5 text-zinc-400" />
-                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
+                  <p className="text-[10px] text-cyan-300/60 mt-1">Ketuk untuk detail</p>
+                </button>
+                {/* Perangkat — klikable */}
+                <button
+                  onClick={() => setShowDeviceDetail((v) => !v)}
+                  className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4 text-left transition hover:bg-slate-800/80 active:scale-[0.97]"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-3.5 h-3.5 text-zinc-400" />
+                      <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
+                    </div>
+                    <ChevronRight className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${showDeviceDetail ? "rotate-90" : ""}`} />
                   </div>
                   <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.device_count ?? 0}</p>
-                  <p className="text-[10px] text-zinc-500 mt-1">milik kampus</p>
-                </div>
+                  <p className="text-[10px] text-zinc-600 mt-1">Ketuk untuk detail</p>
+                </button>
               </div>
-              <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Keramaian</p>
-                <div className="flex items-center gap-3 mt-3">
-                  <p className={`text-2xl font-bold ${
-                    (selectedBuilding.density ?? 0) >= 90 ? "text-rose-300" :
-                    (selectedBuilding.density ?? 0) >= 70 ? "text-amber-300" : "text-emerald-300"
-                  }`}>{selectedBuilding.density ?? 0}%</p>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    (selectedBuilding.density ?? 0) >= 90 ? "bg-rose-500/20 text-rose-300" :
-                    (selectedBuilding.density ?? 0) >= 70 ? "bg-amber-500/20 text-amber-300" :
-                    "bg-emerald-500/20 text-emerald-300"
-                  }`}>{getDensityLabel(selectedBuilding)}</span>
+
+              {/* Panel detail pengguna WiFi */}
+              {showUserDetail && (
+                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Jenis Perangkat Pengguna</p>
+                  </div>
+                  {selectedBuilding.user_breakdown && selectedBuilding.user_breakdown.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedBuilding.user_breakdown.map((item) => (
+                        <div key={item.label} className="flex items-center justify-between py-1 border-b border-cyan-500/10 last:border-0">
+                          <span className="text-xs text-zinc-300">{item.label}</span>
+                          <span className="text-xs font-bold text-cyan-200 bg-cyan-500/10 px-2.5 py-0.5 rounded-full">{item.count} perangkat</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">Informasi perangkat tidak tersedia saat ini.</p>
+                  )}
+                  <p className="text-[10px] text-zinc-600 mt-3">Data anonim — tidak mencantumkan identitas pengguna</p>
                 </div>
-              </div>
-              {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 && (
+              )}
+
+              {/* Panel detail perangkat kampus */}
+              {showDeviceDetail && (
                 <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Cpu className="w-3.5 h-3.5 text-zinc-400" />
                     <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Detail Perangkat Kampus</p>
                   </div>
-                  <div className="space-y-2">
-                    {selectedBuilding.device_categories.map((cat) => (
-                      <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
-                        <span className="text-xs text-zinc-300">{cat.label}</span>
-                        <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
-                      </div>
-                    ))}
-                  </div>
+                  {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedBuilding.device_categories.map((cat) => (
+                        <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
+                          <span className="text-xs text-zinc-300">{cat.label}</span>
+                          <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">Tidak ada perangkat kampus terdeteksi.</p>
+                  )}
                 </div>
               )}
               {selectedBuilding.online && (selectedBuilding.bandwidth_download || selectedBuilding.bandwidth_upload) && (
@@ -736,12 +769,19 @@ export default function PublicMapPage() {
                 ) : (
                   <MapContainer
                     center={[-7.2908, 112.779]}
-                    zoom={17}
-                    minZoom={17}
-                    maxZoom={20}
+                    zoom={17.8}
+                    minZoom={17.8}
+                    maxZoom={17.8}
+                    zoomSnap={0}
+                    zoomDelta={0}
                     maxBounds={CAMPUS_BOUNDS}
                     maxBoundsViscosity={1.0}
-                    scrollWheelZoom={true}
+                    scrollWheelZoom={false}
+                    touchZoom={false}
+                    doubleClickZoom={false}
+                    zoomControl={false}
+                    keyboard={false}
+                    boxZoom={false}
                     style={{ height: "100%", width: "100%" }}
                   >
                     <MapUpdater selectedBuilding={selectedBuilding} />
@@ -912,58 +952,85 @@ export default function PublicMapPage() {
                       </p>
                     </div>
                     <div className="grid gap-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Users className="w-3.5 h-3.5 text-cyan-400" />
-                            <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
-                          </div>
-                          <p className="mt-1 text-3xl font-bold text-white">
-                            {selectedBuilding.user_count ?? 0}
-                          </p>
-                          <p className="text-[10px] text-zinc-500 mt-1">mahasiswa &amp; tamu</p>
-                        </div>
-                        <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Building2 className="w-3.5 h-3.5 text-zinc-400" />
-                            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
-                          </div>
-                          <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.device_count ?? 0}</p>
-                          <p className="text-[10px] text-zinc-500 mt-1">milik kampus</p>
-                        </div>
-                      </div>
-                      <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Keramaian</p>
-                        <div className="flex items-center gap-3 mt-3">
-                          <p className={`text-2xl font-bold ${
-                            (selectedBuilding.density ?? 0) >= 70 ? "text-amber-300" :
-                            (selectedBuilding.density ?? 0) >= 90 ? "text-rose-300" : "text-emerald-300"
-                          }`}>
-                            {selectedBuilding.density ?? 0}%
-                          </p>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            (selectedBuilding.density ?? 0) >= 90 ? "bg-rose-500/20 text-rose-300" :
-                            (selectedBuilding.density ?? 0) >= 70 ? "bg-amber-500/20 text-amber-300" :
-                            "bg-emerald-500/20 text-emerald-300"
-                          }`}>{getDensityLabel(selectedBuilding)}</span>
-                        </div>
-                      </div>
-                      {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 && (
-                        <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Cpu className="w-3.5 h-3.5 text-zinc-400" />
-                            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Detail Perangkat Kampus</p>
-                          </div>
-                          <div className="space-y-2">
-                            {selectedBuilding.device_categories.map((cat) => (
-                              <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
-                                <span className="text-xs text-zinc-300">{cat.label}</span>
-                                <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Pengguna WiFi — klikable */}
+                          <button
+                            onClick={() => setShowUserDetail((v) => !v)}
+                            className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-left transition hover:bg-cyan-500/10 active:scale-[0.97]"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Users className="w-3.5 h-3.5 text-cyan-400" />
+                                <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
                               </div>
-                            ))}
-                          </div>
+                              <ChevronRight className={`w-3.5 h-3.5 text-cyan-400 transition-transform ${showUserDetail ? "rotate-90" : ""}`} />
+                            </div>
+                            <p className="mt-1 text-3xl font-bold text-white">
+                              {selectedBuilding.user_count ?? 0}
+                            </p>
+                            <p className="text-[10px] text-cyan-300/60 mt-1">Klik untuk detail</p>
+                          </button>
+                          {/* Perangkat — klikable */}
+                          <button
+                            onClick={() => setShowDeviceDetail((v) => !v)}
+                            className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4 text-left transition hover:bg-slate-800/80 active:scale-[0.97]"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Building2 className="w-3.5 h-3.5 text-zinc-400" />
+                                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
+                              </div>
+                              <ChevronRight className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${showDeviceDetail ? "rotate-90" : ""}`} />
+                            </div>
+                            <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.device_count ?? 0}</p>
+                            <p className="text-[10px] text-zinc-600 mt-1">Klik untuk detail</p>
+                          </button>
                         </div>
-                      )}
+
+                        {/* Panel detail pengguna WiFi */}
+                        {showUserDetail && (
+                          <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Users className="w-3.5 h-3.5 text-cyan-400" />
+                              <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Jenis Perangkat Pengguna</p>
+                            </div>
+                            {selectedBuilding.user_breakdown && selectedBuilding.user_breakdown.length > 0 ? (
+                              <div className="space-y-2">
+                                {selectedBuilding.user_breakdown.map((item) => (
+                                  <div key={item.label} className="flex items-center justify-between py-1 border-b border-cyan-500/10 last:border-0">
+                                    <span className="text-xs text-zinc-300">{item.label}</span>
+                                    <span className="text-xs font-bold text-cyan-200 bg-cyan-500/10 px-2.5 py-0.5 rounded-full">{item.count} perangkat</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-zinc-500">Informasi perangkat tidak tersedia saat ini.</p>
+                            )}
+                            <p className="text-[10px] text-zinc-600 mt-3">Data anonim — tidak mencantumkan identitas pengguna</p>
+                          </div>
+                        )}
+
+                        {/* Panel detail perangkat kampus */}
+                        {showDeviceDetail && (
+                          <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Cpu className="w-3.5 h-3.5 text-zinc-400" />
+                              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Detail Perangkat Kampus</p>
+                            </div>
+                            {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 ? (
+                              <div className="space-y-2">
+                                {selectedBuilding.device_categories.map((cat) => (
+                                  <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
+                                    <span className="text-xs text-zinc-300">{cat.label}</span>
+                                    <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-zinc-500">Tidak ada perangkat kampus terdeteksi.</p>
+                            )}
+                          </div>
+                        )}
                       {selectedBuilding.online && (selectedBuilding.bandwidth_download || selectedBuilding.bandwidth_upload) && (
                         <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
                           <div className="flex items-center gap-2 mb-3">
