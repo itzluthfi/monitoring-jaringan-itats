@@ -1,9 +1,9 @@
-import { 
-  Activity, 
-  MapPin, 
-  Network, 
-  Server, 
-  Settings, 
+import {
+  Activity,
+  MapPin,
+  Network,
+  Server,
+  Settings,
   Bell,
   Router as RouterIcon,
   Brain,
@@ -12,29 +12,52 @@ import {
 } from 'lucide-react';
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 export type ViewType = 'dashboard' | 'map' | 'topology' | 'vlan' | 'devices' | 'aps' | 'logs' | 'settings' | 'notifications' | 'smart-central' | 'clients' | 'controllers' | 'tickets';
 
-
 export interface NavItem {
   id: ViewType;
-  label: string;
+  labelKey: string; // Translation key
   icon: React.ElementType;
 }
 
-export const NAVIGATION: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: Activity },
-  { id: 'map', label: 'Campus Map', icon: MapPin },
-  { id: 'topology', label: 'Network Topology', icon: Server },
-  { id: 'vlan', label: 'Traffic Monitoring', icon: Network },
-  { id: 'devices', label: 'MikroTik Devices', icon: RouterIcon },
-  { id: 'aps', label: 'Access Points', icon: Network },
-  { id: 'clients', label: 'Clients', icon: Users },
-  { id: 'controllers', label: 'Adapters / Controllers', icon: Network },
-  { id: 'logs', label: 'System Logs', icon: Activity },
-  { id: 'tickets', label: 'Trouble Reports', icon: MessageSquare },
+// Hook to get translated navigation
+export const useTranslatedNav = () => {
+  const { t } = useTranslation();
 
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'smart-central', label: 'Smart Central', icon: Brain },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  const NAV_ITEMS: NavItem[] = [
+    { id: 'dashboard', labelKey: 'nav.dashboard', icon: Activity },
+    { id: 'map', labelKey: 'nav.campusMap', icon: MapPin },
+    { id: 'topology', labelKey: 'nav.networkTopology', icon: Server },
+    { id: 'vlan', labelKey: 'nav.trafficMonitoring', icon: Network },
+    { id: 'devices', labelKey: 'nav.mikrotikDevices', icon: RouterIcon },
+    { id: 'aps', labelKey: 'nav.accessPoints', icon: Network },
+    { id: 'clients', labelKey: 'nav.clients', icon: Users },
+    { id: 'controllers', labelKey: 'nav.controllers', icon: Network },
+    { id: 'logs', labelKey: 'nav.systemLogs', icon: Activity },
+    { id: 'tickets', labelKey: 'nav.tickets', icon: MessageSquare },
+    { id: 'notifications', labelKey: 'nav.notifications', icon: Bell },
+    { id: 'smart-central', labelKey: 'nav.smartCentral', icon: Brain },
+    { id: 'settings', labelKey: 'nav.settings', icon: Settings },
+  ];
+
+  return { NAV_ITEMS, t };
+};
+
+// Default export for backwards compatibility
+export const NAVIGATION: NavItem[] = [
+  { id: 'dashboard', labelKey: 'nav.dashboard', icon: Activity },
+  { id: 'map', labelKey: 'nav.campusMap', icon: MapPin },
+  { id: 'topology', labelKey: 'nav.networkTopology', icon: Server },
+  { id: 'vlan', labelKey: 'nav.trafficMonitoring', icon: Network },
+  { id: 'devices', labelKey: 'nav.mikrotikDevices', icon: RouterIcon },
+  { id: 'aps', labelKey: 'nav.accessPoints', icon: Network },
+  { id: 'clients', labelKey: 'nav.clients', icon: Users },
+  { id: 'controllers', labelKey: 'nav.controllers', icon: Network },
+  { id: 'logs', labelKey: 'nav.systemLogs', icon: Activity },
+  { id: 'tickets', labelKey: 'nav.tickets', icon: MessageSquare },
+  { id: 'notifications', labelKey: 'nav.notifications', icon: Bell },
+  { id: 'smart-central', labelKey: 'nav.smartCentral', icon: Brain },
+  { id: 'settings', labelKey: 'nav.settings', icon: Settings },
 ];

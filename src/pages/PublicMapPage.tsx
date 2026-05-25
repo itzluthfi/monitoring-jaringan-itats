@@ -50,6 +50,7 @@ interface PublicMapBuilding {
   user_breakdown?: Array<{ label: string; count: number }>;
   device_count?: number;
   device_categories?: Array<{ label: string; count: number }>;
+  device_names?: string[];
   density?: number;
   load_label?: string;
   bandwidth_download?: string | null;
@@ -126,7 +127,7 @@ export default function PublicMapPage() {
     useState<PublicMapBuilding | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [leftExpanded, setLeftExpanded] = useState(window.innerWidth >= 1024);
-  const [rightExpanded, setRightExpanded] = useState(window.innerWidth >= 1024);
+  const [rightExpanded, setRightExpanded] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [showInfoTooltip, setShowInfoTooltip] = useState(false);
   const [showUserDetail, setShowUserDetail] = useState(false);
@@ -149,7 +150,9 @@ export default function PublicMapPage() {
       setIsMobile(mobile);
       if (!mobile) {
         setLeftExpanded(true);
-        setRightExpanded(true);
+        if (selectedId) {
+          setRightExpanded(true);
+        }
       } else {
         setLeftExpanded(false);
         if (!selectedId) {
@@ -300,12 +303,12 @@ export default function PublicMapPage() {
     <div className={`min-h-screen font-sans transition-colors duration-300 ${isDark ? 'bg-[#08111f] text-zinc-100' : 'bg-[#eef2f9] text-slate-900 pub-light'}`}>
       {/* Mobile Search Drawer */}
       {leftExpanded && isMobile && (
-        <div className="fixed inset-0 z-[700] flex flex-col bg-slate-950/95 backdrop-blur-xl lg:hidden">
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
+        <div className={`fixed inset-0 z-[700] flex flex-col backdrop-blur-xl lg:hidden ${isDark ? 'bg-slate-950/95 text-zinc-100' : 'bg-white/95 text-slate-900'}`}>
+          <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
             <h2 className="text-lg font-semibold">Cari Area</h2>
             <button
               onClick={() => setLeftExpanded(false)}
-              className="rounded-full border border-white/10 bg-zinc-900/80 p-2 text-zinc-300 hover:text-white"
+              className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
             >
               ✕
             </button>
@@ -318,7 +321,11 @@ export default function PublicMapPage() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Cari gedung atau ruang..."
-                className="w-full rounded-3xl border border-zinc-800 bg-slate-950/90 py-3 pl-12 pr-4 text-sm text-zinc-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20"
+                className={`w-full rounded-3xl border py-3 pl-12 pr-4 text-sm outline-none transition ${
+                  isDark 
+                    ? 'border-zinc-800 bg-slate-950/90 text-zinc-100 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20' 
+                    : 'border-slate-200 bg-white text-slate-800 focus:border-cyan-600 focus:ring-2 focus:ring-cyan-500/10'
+                }`}
               />
             </div>
             <div className="space-y-3">
@@ -329,11 +336,15 @@ export default function PublicMapPage() {
                     setSelectedId(building.id);
                     setLeftExpanded(false);
                   }}
-                  className={`w-full rounded-3xl border p-3 text-left transition duration-200 ${selectedId === building.id ? "border-cyan-400/40 bg-cyan-500/10" : "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90"}`}
+                  className={`w-full rounded-3xl border p-3 text-left transition duration-200 ${
+                    selectedId === building.id 
+                      ? isDark ? "border-cyan-400/40 bg-cyan-500/10" : "border-cyan-400 bg-cyan-50" 
+                      : isDark ? "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90" : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-100/70"
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-white">
+                      <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                         {sanitizePublicName(building.name)}
                       </p>
                       <p className="text-xs text-zinc-500 mt-1">
@@ -361,22 +372,22 @@ export default function PublicMapPage() {
 
       {/* Mobile Detail Drawer */}
       {rightExpanded && isMobile && selectedBuilding && (
-        <div className="fixed inset-0 z-[700] flex flex-col bg-slate-950/95 backdrop-blur-xl lg:hidden">
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
+        <div className={`fixed inset-0 z-[700] flex flex-col backdrop-blur-xl lg:hidden ${isDark ? 'bg-slate-950/95 text-zinc-100' : 'bg-white/95 text-slate-900'}`}>
+          <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
             <h2 className="text-lg font-semibold">Detail Area</h2>
             <button
               onClick={() => setRightExpanded(false)}
-              className="rounded-full border border-white/10 bg-zinc-900/80 p-2 text-zinc-300 hover:text-white"
+              className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
             >
               ✕
             </button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-4 p-4">
-            <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+            <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
               <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
                 Lokasi
               </p>
-              <p className="mt-2 text-lg font-semibold text-white">
+              <p className={`mt-2 text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                 {sanitizePublicName(selectedBuilding.name)}
               </p>
               <p
@@ -390,71 +401,79 @@ export default function PublicMapPage() {
                 {/* Pengguna WiFi — klikable */}
                 <button
                   onClick={() => setShowUserDetail((v) => !v)}
-                  className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-left transition hover:bg-cyan-500/10 active:scale-[0.97]"
+                  className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 ${
+                    isDark 
+                      ? 'border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10' 
+                      : 'border-cyan-200 bg-cyan-50/40 hover:bg-cyan-100/50'
+                  }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <Users className="w-3.5 h-3.5 text-cyan-400" />
-                      <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
+                      <Users className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                      <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'}`}>Pengguna WiFi</p>
                     </div>
-                    <ChevronRight className={`w-3.5 h-3.5 text-cyan-400 transition-transform ${showUserDetail ? "rotate-90" : ""}`} />
+                    <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isDark ? 'text-cyan-400' : 'text-cyan-650'} ${showUserDetail ? "rotate-90" : ""}`} />
                   </div>
-                  <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.user_count ?? 0}</p>
-                  <p className="text-[10px] text-cyan-300/60 mt-1">Ketuk untuk detail</p>
+                  <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-cyan-950'}`}>{selectedBuilding.user_count ?? 0}</p>
+                  <p className={`text-[10px] mt-1 ${isDark ? 'text-cyan-300/60' : 'text-cyan-600/80'}`}>Ketuk untuk detail</p>
                 </button>
                 {/* Perangkat — klikable */}
                 <button
                   onClick={() => setShowDeviceDetail((v) => !v)}
-                  className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4 text-left transition hover:bg-slate-800/80 active:scale-[0.97]"
+                  className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 ${
+                    isDark 
+                      ? 'border-zinc-800 bg-slate-900/80 hover:bg-slate-800/80' 
+                      : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100'
+                  }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <Building2 className="w-3.5 h-3.5 text-zinc-400" />
-                      <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
+                      <Building2 className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
+                      <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-550'}`}>Perangkat</p>
                     </div>
                     <ChevronRight className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${showDeviceDetail ? "rotate-90" : ""}`} />
                   </div>
-                  <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.device_count ?? 0}</p>
-                  <p className="text-[10px] text-zinc-600 mt-1">Ketuk untuk detail</p>
+                  <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{selectedBuilding.device_count ?? 0}</p>
+                  <p className={`text-[10px] mt-1 ${isDark ? 'text-zinc-650' : 'text-slate-400'}`}>Ketuk untuk detail</p>
                 </button>
               </div>
 
               {/* Panel detail pengguna WiFi */}
               {showUserDetail && (
-                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                <div className={`rounded-3xl border p-4 ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
                   <div className="flex items-center gap-2 mb-3">
-                    <Users className="w-3.5 h-3.5 text-cyan-400" />
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Jenis Perangkat Pengguna</p>
+                    <Users className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-755'}`}>Jenis Perangkat Pengguna</p>
                   </div>
                   {selectedBuilding.user_breakdown && selectedBuilding.user_breakdown.length > 0 ? (
                     <div className="space-y-2">
                       {selectedBuilding.user_breakdown.map((item) => (
-                        <div key={item.label} className="flex items-center justify-between py-1 border-b border-cyan-500/10 last:border-0">
-                          <span className="text-xs text-zinc-300">{item.label}</span>
-                          <span className="text-xs font-bold text-cyan-200 bg-cyan-500/10 px-2.5 py-0.5 rounded-full">{item.count} perangkat</span>
+                        <div key={item.label} className={`flex items-center justify-between py-1 border-b last:border-0 ${isDark ? 'border-cyan-500/10' : 'border-cyan-200/50'}`}>
+                          <span className={`text-xs ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{item.label}</span>
+                          <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${isDark ? 'text-cyan-200 bg-cyan-500/10' : 'text-cyan-800 bg-cyan-100/50'}`}>{item.count} perangkat</span>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <p className="text-xs text-zinc-500">Informasi perangkat tidak tersedia saat ini.</p>
                   )}
-                  <p className="text-[10px] text-zinc-600 mt-3">Data anonim — tidak mencantumkan identitas pengguna</p>
+                  <p className={`text-[10px] ${isDark ? 'text-zinc-650' : 'text-slate-400'} mt-3`}>Data anonim — tidak mencantumkan identitas pengguna</p>
                 </div>
               )}
 
               {/* Panel detail perangkat kampus */}
               {showDeviceDetail && (
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
                   <div className="flex items-center gap-2 mb-3">
-                    <Cpu className="w-3.5 h-3.5 text-zinc-400" />
-                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Detail Perangkat Kampus</p>
+                    <Cpu className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-550'}`} />
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-555'}`}>Detail Perangkat Kampus</p>
                   </div>
-                  {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 ? (
+                  {selectedBuilding.device_names && selectedBuilding.device_names.length > 0 ? (
                     <div className="space-y-2">
-                      {selectedBuilding.device_categories.map((cat) => (
-                        <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
-                          <span className="text-xs text-zinc-300">{cat.label}</span>
-                          <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
+                      {selectedBuilding.device_names.map((name, index) => (
+                        <div key={index} className={`flex items-center justify-between py-1 border-b last:border-0 ${isDark ? 'border-white/5' : 'border-slate-200'}`}>
+                          <span className={`text-xs font-semibold ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{name}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'text-emerald-300 bg-emerald-500/10' : 'text-emerald-800 bg-emerald-100/50'}`}>Online</span>
                         </div>
                       ))}
                     </div>
@@ -464,19 +483,19 @@ export default function PublicMapPage() {
                 </div>
               )}
               {selectedBuilding.online && (selectedBuilding.bandwidth_download || selectedBuilding.bandwidth_upload) && (
-                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                <div className={`rounded-3xl border p-4 ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <ArrowDownUp className="w-3.5 h-3.5 text-cyan-400" />
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Bandwidth</p>
+                    <ArrowDownUp className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'}`}>Bandwidth</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <p className="text-[10px] text-zinc-500">↓ Download</p>
-                      <p className="text-sm font-bold text-white mt-0.5">{selectedBuilding.bandwidth_download ?? "–"}</p>
+                      <p className={`text-sm font-bold mt-0.5 ${isDark ? 'text-white' : 'text-slate-850'}`}>{selectedBuilding.bandwidth_download ?? "–"}</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-zinc-500">↑ Upload</p>
-                      <p className="text-sm font-bold text-white mt-0.5">{selectedBuilding.bandwidth_upload ?? "–"}</p>
+                      <p className={`text-sm font-bold mt-0.5 ${isDark ? 'text-white' : 'text-slate-850'}`}>{selectedBuilding.bandwidth_upload ?? "–"}</p>
                     </div>
                   </div>
                 </div>
@@ -508,30 +527,30 @@ export default function PublicMapPage() {
                 <button
                   onClick={() => setShowInfoTooltip((v) => !v)}
                   className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border transition ${
-                    isDark ? 'border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40' : 'border-slate-200 bg-white text-slate-500 hover:text-cyan-600'
+                    isDark ? 'border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40' : 'border-slate-200 bg-white text-slate-500 hover:text-cyan-600 hover:border-slate-350'
                   }`}
                   title="Cara melaporkan gangguan"
                 >
                   <Info className="w-4 h-4" />
                 </button>
                 {showInfoTooltip && (
-                  <div className="absolute top-10 right-0 z-[600] w-72 rounded-2xl border border-cyan-500/20 bg-slate-950 shadow-2xl shadow-cyan-950/30 p-4">
+                  <div className={`absolute top-10 right-0 z-[600] w-72 rounded-2xl border shadow-2xl p-4 ${isDark ? 'border-cyan-500/20 bg-slate-950 shadow-cyan-950/30 text-zinc-100' : 'border-cyan-200 bg-white shadow-cyan-100/50 text-slate-700'}`}>
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="flex items-center gap-2">
                         <Info className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                        <p className="text-sm font-bold text-white">Cara Lapor Gangguan</p>
+                        <p className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>Cara Lapor Gangguan</p>
                       </div>
-                      <button onClick={() => setShowInfoTooltip(false)} className="text-zinc-500 hover:text-white transition">
+                      <button onClick={() => setShowInfoTooltip(false)} className={`transition ${isDark ? 'text-zinc-500 hover:text-white' : 'text-slate-400 hover:text-slate-850'}`}>
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="space-y-2 text-xs text-zinc-400 leading-relaxed">
-                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">1.</span><p>Klik tombol <span className="text-rose-300 font-semibold">Lapor</span> di menu bawah.</p></div>
+                    <div className={`space-y-2 text-xs leading-relaxed ${isDark ? 'text-zinc-400' : 'text-slate-650'}`}>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">1.</span><p>Klik tombol <span className={`font-semibold ${isDark ? 'text-rose-300' : 'text-rose-600'}`}>Lapor</span> di menu bawah.</p></div>
                       <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">2.</span><p>Isi formulir: nama, lokasi, dan deskripsi masalah koneksi.</p></div>
-                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">3.</span><p>Laporan dikirim ke tim UPT TI dan ditangani sesuai antrean (<span className="text-indigo-300 font-semibold">sistem tiket</span>).</p></div>
-                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">4.</span><p>Pantau melalui menu <span className="text-indigo-300 font-semibold">Tiket</span> di bawah.</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">3.</span><p>Laporan dikirim ke tim UPT TI dan ditangani sesuai antrean (<span className={`font-semibold ${isDark ? 'text-indigo-300' : 'text-indigo-650'}`}>sistem tiket</span>).</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">4.</span><p>Pantau melalui menu <span className={`font-semibold ${isDark ? 'text-indigo-300' : 'text-indigo-650'}`}>Tiket</span> di bawah.</p></div>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-zinc-500">Tiket = nomor antrian penanganan</div>
+                    <div className={`mt-3 pt-3 border-t text-[10px] ${isDark ? 'border-white/5 text-zinc-500' : 'border-slate-100 text-slate-450'}`}>Tiket = nomor antrian penanganan</div>
                   </div>
                 )}
               </div>
@@ -564,51 +583,61 @@ export default function PublicMapPage() {
               <div className="relative">
                 <button
                   onClick={() => (window.location.href = "/report")}
-                  className="relative inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-300 transition-all duration-200 hover:bg-rose-500/20 hover:scale-[1.02] cursor-pointer shadow-lg shadow-rose-950/20"
+                  className={`relative inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] cursor-pointer shadow-lg ${
+                    isDark 
+                      ? 'border-rose-500/30 bg-rose-500/10 text-rose-300 shadow-rose-950/20' 
+                      : 'border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 shadow-rose-100/50'
+                  }`}
                 >
                   <span className="absolute -top-1 -right-1 flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                   </span>
-                  <Plus className="w-4 h-4 text-rose-400" />
+                  <Plus className="w-4 h-4 text-rose-500" />
                   Lapor Gangguan
                 </button>
                 <button
                   onClick={() => setShowInfoTooltip((v) => !v)}
-                  className="ml-1 inline-flex items-center justify-center w-6 h-6 rounded-full border border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40 transition"
+                  className={`ml-1 inline-flex items-center justify-center w-6 h-6 rounded-full border transition ${
+                    isDark ? 'border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40' : 'border-slate-200 bg-slate-50 text-slate-500 hover:text-cyan-600'
+                  }`}
                   title="Cara melaporkan gangguan"
                 >
                   <Info className="w-3.5 h-3.5" />
                 </button>
                 {showInfoTooltip && (
-                  <div className="absolute top-12 right-0 z-[600] w-72 rounded-2xl border border-cyan-500/20 bg-slate-950 shadow-2xl shadow-cyan-950/30 p-4">
+                  <div className={`absolute top-12 right-0 z-[600] w-72 rounded-2xl border shadow-2xl p-4 ${isDark ? 'border-cyan-500/20 bg-slate-950 shadow-cyan-950/30 text-zinc-100' : 'border-cyan-200 bg-white shadow-cyan-100/50 text-slate-700'}`}>
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="flex items-center gap-2">
                         <Info className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                        <p className="text-sm font-bold text-white">Cara Lapor Gangguan</p>
+                        <p className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>Cara Lapor Gangguan</p>
                       </div>
-                      <button onClick={() => setShowInfoTooltip(false)} className="text-zinc-500 hover:text-white transition"><X className="w-4 h-4" /></button>
+                      <button onClick={() => setShowInfoTooltip(false)} className={`transition ${isDark ? 'text-zinc-500 hover:text-white' : 'text-slate-400 hover:text-slate-800'}`}><X className="w-4 h-4" /></button>
                     </div>
-                    <div className="space-y-2 text-xs text-zinc-400 leading-relaxed">
-                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">1.</span><p>Klik tombol <span className="text-rose-300 font-semibold">Lapor Gangguan</span> di sebelah kiri.</p></div>
+                    <div className={`space-y-2 text-xs leading-relaxed ${isDark ? 'text-zinc-400' : 'text-slate-650'}`}>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">1.</span><p>Klik tombol <span className={`font-semibold ${isDark ? 'text-rose-300' : 'text-rose-600'}`}>Lapor Gangguan</span> di sebelah kiri.</p></div>
                       <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">2.</span><p>Isi formulir: nama, lokasi kejadian, dan deskripsi masalah koneksi.</p></div>
-                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">3.</span><p>Laporan dikirim ke tim UPT TI dan ditangani sesuai antrean (<span className="text-indigo-300 font-semibold">sistem tiket</span>).</p></div>
-                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">4.</span><p>Pantau status melalui tombol <span className="text-indigo-300 font-semibold">Status Tiket</span>.</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">3.</span><p>Laporan dikirim ke tim UPT TI dan ditangani sesuai antrean (<span className={`font-semibold ${isDark ? 'text-indigo-300' : 'text-indigo-650'}`}>sistem tiket</span>).</p></div>
+                      <div className="flex gap-2"><span className="text-cyan-400 font-bold flex-shrink-0">4.</span><p>Pantau status melalui tombol <span className={`font-semibold ${isDark ? 'text-indigo-300' : 'text-indigo-650'}`}>Status Tiket</span>.</p></div>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-zinc-500">Tiket = nomor antrian penanganan</div>
+                    <div className={`mt-3 pt-3 border-t text-[10px] ${isDark ? 'border-white/5 text-zinc-500' : 'border-slate-100 text-slate-450'}`}>Tiket = nomor antrian penanganan</div>
                   </div>
                 )}
               </div>
               <button
                 onClick={() => (window.location.href = "/status-board")}
-                className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-sm font-semibold text-indigo-300 transition-all duration-200 hover:bg-indigo-500/20 hover:scale-[1.02] cursor-pointer"
+                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] cursor-pointer ${
+                  isDark ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20' : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                }`}
               >
                 <MessageSquare className="w-4 h-4 text-indigo-400" />
                 Status Tiket
               </button>
               <button
                 onClick={() => (window.location.href = "/login")}
-                className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-200 transition-all hover:bg-cyan-500/20 hover:scale-[1.02] cursor-pointer"
+                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all hover:scale-[1.02] cursor-pointer ${
+                  isDark ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20' : 'border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-700'
+                }`}
               >
                 <Shield className="w-4 h-4 text-cyan-400" />
                 Admin
@@ -616,7 +645,7 @@ export default function PublicMapPage() {
               <button
                 onClick={toggleTheme}
                 className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl border transition ${
-                  isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-slate-300 bg-white/80 text-slate-600 hover:bg-white'
+                  isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-slate-300 bg-white/80 text-slate-600 hover:bg-white hover:border-slate-400'
                 }`}
                 title={isDark ? 'Mode Terang' : 'Mode Gelap'}
               >
@@ -624,7 +653,9 @@ export default function PublicMapPage() {
               </button>
               <button
                 onClick={() => window.location.reload()}
-                className="inline-flex items-center justify-center w-9 h-9 rounded-2xl border border-zinc-700 bg-zinc-900/80 text-zinc-200 transition hover:bg-zinc-800"
+                className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl border transition ${
+                  isDark ? 'border-zinc-700 bg-zinc-900/80 text-zinc-200 hover:bg-zinc-800' : 'border-slate-350 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
@@ -704,19 +735,23 @@ export default function PublicMapPage() {
       <main className="mx-auto px-4 py-4 md:px-6 md:py-8 relative z-0 pb-28 lg:pb-8">
         <div className="grid gap-4 md:gap-6 grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
           <aside
-            className={`rounded-[2rem] border border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10 transition-all duration-300 hidden lg:block ${leftExpanded ? "w-80 lg:w-80" : "w-16"}`}
+            className={`rounded-[2rem] border transition-all duration-300 hidden lg:block ${leftExpanded ? "w-80 lg:w-80" : "w-16"} ${
+              isDark 
+                ? "border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10" 
+                : "border-black/8 bg-white/92 shadow-xl shadow-slate-200/50"
+            }`}
           >
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
+            <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-black/8'}`}>
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-cyan-500/10 p-2 text-cyan-300">
                   <Wifi className="w-4 h-4" />
                 </div>
                 {leftExpanded ? (
                   <div>
-                    <p className="text-xs uppercase tracking-[0.24em] text-cyan-300/80">
+                    <p className={`text-xs uppercase tracking-[0.24em] ${isDark ? 'text-cyan-300/80' : 'text-cyan-600'}`}>
                       Panel Informasi
                     </p>
-                    <p className="text-sm font-semibold text-white">
+                    <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                       Ringkasan Jaringan
                     </p>
                   </div>
@@ -724,7 +759,7 @@ export default function PublicMapPage() {
               </div>
               <button
                 onClick={() => setLeftExpanded((prev) => !prev)}
-                className="rounded-full border border-white/10 bg-zinc-900/80 p-2 text-zinc-300 hover:text-white transition"
+                className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
               >
                 {leftExpanded ? (
                   <ChevronLeft className="w-4 h-4" />
@@ -736,12 +771,16 @@ export default function PublicMapPage() {
             {leftExpanded ? (
               <div className="space-y-5 p-4">
                 {/* Support Card */}
-                <div className="relative overflow-hidden rounded-3xl border border-rose-500/25 bg-gradient-to-b from-rose-500/10 via-slate-950 to-slate-950 p-4 shadow-lg shadow-rose-950/10">
+                <div className={`relative overflow-hidden rounded-3xl border p-4 shadow-lg transition-all duration-300 ${
+                  isDark 
+                    ? 'border-rose-500/25 bg-gradient-to-b from-rose-500/10 via-slate-950 to-slate-950 shadow-rose-950/10' 
+                    : 'border-rose-200 bg-gradient-to-b from-rose-50/50 via-rose-100/30 to-rose-200/20 shadow-rose-100/50'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-400 animate-pulse" />
-                    <h3 className="text-xs font-bold uppercase tracking-[0.1em] text-rose-300">Ada Kendala Jaringan?</h3>
+                    <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" />
+                    <h3 className={`text-xs font-bold uppercase tracking-[0.1em] ${isDark ? 'text-rose-300' : 'text-rose-700'}`}>Ada Kendala Jaringan?</h3>
                   </div>
-                  <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+                  <p className={`text-[11px] mt-2 leading-relaxed ${isDark ? 'text-zinc-400' : 'text-slate-650'}`}>
                     Jika koneksi Wi-Fi atau internet di kampus terganggu, segera laporkan ke admin.
                   </p>
                   <div className="mt-3.5 grid grid-cols-2 gap-2">
@@ -754,7 +793,11 @@ export default function PublicMapPage() {
                     </button>
                     <button
                       onClick={() => (window.location.href = "/status-board")}
-                      className="flex items-center justify-center gap-1 rounded-xl border border-indigo-500/20 bg-indigo-500/10 hover:bg-indigo-500/20 px-2.5 py-2 text-xs font-bold text-indigo-300 transition-all hover:scale-[1.03] cursor-pointer"
+                      className={`flex items-center justify-center gap-1 rounded-xl border px-2.5 py-2 text-xs font-bold transition-all hover:scale-[1.03] cursor-pointer ${
+                        isDark 
+                          ? 'border-indigo-500/20 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300' 
+                          : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                      }`}
                     >
                       <MessageSquare className="w-3.5 h-3.5" />
                       Status
@@ -762,33 +805,33 @@ export default function PublicMapPage() {
                   </div>
                 </div>
                 {/* Stats: Total Pengguna WiFi + Perangkat Kampus */}
-                <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                <div className={`rounded-3xl border p-4 ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-3.5 h-3.5 text-cyan-400" />
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Total Pengguna WiFi</p>
+                    <Users className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-700'}`}>Total Pengguna WiFi</p>
                   </div>
-                  <p className="text-3xl font-bold text-white">{totalCurrent}</p>
-                  <p className="text-[10px] text-zinc-500 mt-1">seluruh area kampus</p>
+                  <p className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-cyan-950'}`}>{totalCurrent}</p>
+                  <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-slate-500'} mt-1`}>seluruh area kampus</p>
                 </div>
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <Building2 className="w-3.5 h-3.5 text-zinc-400" />
-                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat Kampus</p>
+                    <Building2 className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>Perangkat Kampus</p>
                   </div>
-                  <p className="text-3xl font-bold text-white">{totalDevices}</p>
-                  <p className="text-[10px] text-zinc-500 mt-1">seluruh area kampus</p>
+                  <p className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{totalDevices}</p>
+                  <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-slate-500'} mt-1`}>seluruh area kampus</p>
                 </div>
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div>
-                      <p className="text-sm font-semibold text-white">
+                      <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                         Cari Area
                       </p>
                       <p className="text-xs text-zinc-500">
                         Temukan gedung atau AP.
                       </p>
                     </div>
-                    <span className="rounded-full bg-cyan-500/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-cyan-200">
+                    <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.2em] ${isDark ? 'bg-cyan-500/10 text-cyan-200' : 'bg-cyan-100 text-cyan-800 font-bold'}`}>
                       {filteredBuildings.length}
                     </span>
                   </div>
@@ -799,7 +842,11 @@ export default function PublicMapPage() {
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
                       placeholder="Cari gedung atau ruang..."
-                      className="w-full rounded-3xl border border-zinc-800 bg-slate-950/90 py-3 pl-12 pr-4 text-sm text-zinc-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20"
+                      className={`w-full rounded-3xl border py-3 pl-12 pr-4 text-sm outline-none transition ${
+                        isDark 
+                          ? 'border-zinc-800 bg-slate-950/90 text-zinc-100 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20' 
+                          : 'border-slate-200 bg-white text-slate-800 focus:border-cyan-600 focus:ring-2 focus:ring-cyan-500/10'
+                      }`}
                     />
                   </div>
                 </div>
@@ -808,11 +855,15 @@ export default function PublicMapPage() {
                     <button
                       key={building.id}
                       onClick={() => setSelectedId(building.id)}
-                      className={`w-full rounded-3xl border p-3 text-left transition duration-200 ${selectedId === building.id ? "border-cyan-400/40 bg-cyan-500/10" : "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90"}`}
+                      className={`w-full rounded-3xl border p-3 text-left transition duration-200 ${
+                        selectedId === building.id 
+                          ? isDark ? "border-cyan-400/40 bg-cyan-500/10" : "border-cyan-400 bg-cyan-50" 
+                          : isDark ? "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90" : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-100/70"
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold text-white">
+                          <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                             {sanitizePublicName(building.name)}
                           </p>
                           <p className="text-xs text-zinc-500 mt-1">
@@ -839,29 +890,33 @@ export default function PublicMapPage() {
           </aside>
 
           <section className="space-y-4 md:space-y-5 order-first lg:order-none">
-            <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 p-4 md:p-6 shadow-2xl shadow-cyan-500/10 backdrop-blur-xl">
+            <div className={`rounded-[2rem] border p-4 md:p-6 backdrop-blur-xl transition-all duration-300 ${
+              isDark 
+                ? 'border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10' 
+                : 'border-black/8 bg-white/92 shadow-xl shadow-slate-200/50'
+            }`}>
               <div className="grid gap-3 md:gap-4 grid-cols-2 md:grid-cols-3">
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/90 p-3 md:p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 line-clamp-1">
+                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                  <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
                     Online
                   </p>
-                  <p className="mt-2 md:mt-3 text-2xl md:text-3xl font-bold text-emerald-300">
+                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-600'}`}>
                     {status?.network?.online ?? "-"}
                   </p>
                 </div>
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/90 p-3 md:p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 line-clamp-1">
+                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                  <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
                     Offline
                   </p>
-                  <p className="mt-2 md:mt-3 text-2xl md:text-3xl font-bold text-amber-300">
+                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-amber-300' : 'text-amber-600'}`}>
                     {status?.network?.offline ?? "-"}
                   </p>
                 </div>
-                <div className="rounded-3xl border border-zinc-800 bg-slate-900/90 p-3 md:p-5 col-span-2 md:col-span-1">
-                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 line-clamp-1">
+                <div className={`rounded-3xl border p-3 md:p-5 col-span-2 md:col-span-1 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                  <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
                     Gedung
                   </p>
-                  <p className="mt-2 md:mt-3 text-2xl md:text-3xl font-bold text-cyan-300">
+                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-cyan-300' : 'text-cyan-600'}`}>
                     {buildings.length}
                   </p>
                 </div>
@@ -869,10 +924,14 @@ export default function PublicMapPage() {
             </div>
 
             {/* Map container — isolation prevents Leaflet z-index from bleeding outside */}
-            <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 overflow-hidden shadow-2xl shadow-cyan-500/10" style={{isolation: 'isolate'}}>
+            <div className={`rounded-[2rem] border overflow-hidden transition-all duration-300 ${
+              isDark 
+                ? 'border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10' 
+                : 'border-black/8 bg-white shadow-xl shadow-slate-200/50'
+            }`} style={{isolation: 'isolate'}}>
               <div className="h-[42vh] min-h-[280px] md:h-[58vh] md:min-h-[440px] relative">
                 {mapLoading ? (
-                  <div className="flex h-full items-center justify-center bg-slate-950 text-zinc-400">
+                  <div className={`flex h-full items-center justify-center text-zinc-400 ${isDark ? 'bg-slate-950' : 'bg-slate-50'}`}>
                     Memuat peta...
                   </div>
                 ) : (
@@ -912,122 +971,29 @@ export default function PublicMapPage() {
                 )}
               </div>
             </div>
-
-            {/* Mobile status & info sections */}
-            {isMobile && (
-              <div className="space-y-4">
-                {/* Status banner */}
-                <div className={`rounded-[2rem] border p-4 transition-all duration-300 ${
-                  isAllGood
-                    ? "bg-emerald-500/5 border-emerald-500/20 shadow-lg shadow-emerald-950/10"
-                    : hasIssues
-                    ? "bg-rose-500/5 border-rose-500/20 shadow-lg shadow-rose-950/10"
-                    : "bg-zinc-900/50 border-zinc-800"
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center border flex-shrink-0 ${
-                      isAllGood ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
-                      hasIssues ? "bg-rose-500/10 border-rose-500/20 text-rose-400 animate-pulse" :
-                      "bg-zinc-800 border-zinc-700 text-zinc-400"
-                    }`}>
-                      {isAllGood ? (
-                        <CheckCircle className="w-4.5 h-4.5" />
-                      ) : hasIssues ? (
-                        <AlertTriangle className="w-4.5 h-4.5" />
-                      ) : (
-                        <Activity className="w-4.5 h-4.5" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className={`text-xs font-bold uppercase tracking-wider ${
-                        isAllGood ? "text-emerald-400" : hasIssues ? "text-rose-400" : "text-zinc-400"
-                      }`}>
-                        {isAllGood ? "Jaringan Normal" : hasIssues ? "Gangguan Terdeteksi" : "Memuat Status..."}
-                      </h4>
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 font-medium">
-                        {isAllGood
-                          ? "Semua perangkat jaringan beroperasi penuh."
-                          : hasIssues
-                          ? `${status?.network?.offline} perangkat offline saat ini.`
-                          : "Menghubungkan ke server..."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Log Gangguan */}
-                <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 p-5 shadow-2xl">
-                  <div className="flex items-center gap-2 pb-3 border-b border-white/5 mb-3">
-                    <Activity className="w-4 h-4 text-cyan-400" />
-                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Log Gangguan Terkini</h4>
-                  </div>
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
-                    {status && status.recentIssues && status.recentIssues.length > 0 ? (
-                      status.recentIssues.map((issue, idx) => (
-                        <div key={idx} className="p-3 rounded-2xl bg-zinc-900/50 border border-white/5 flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${
-                              issue.type === 'critical' ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
-                            }`}>
-                              {issue.type === 'critical' ? 'Gangguan' : 'Info'}
-                            </span>
-                            <span className="text-[10px] text-zinc-500 font-mono">
-                              {new Date(issue.time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                          <p className="text-sm font-semibold text-zinc-200">{issue.title}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="py-6 text-center text-xs text-zinc-500">
-                        Tidak ada laporan gangguan aktif.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Panduan Bantuan */}
-                <div className="rounded-[2rem] border border-white/10 bg-slate-950/90 p-5 shadow-2xl text-xs space-y-3">
-                  <div className="flex items-center gap-2 pb-3 border-b border-white/5">
-                    <Zap className="w-4 h-4 text-amber-400" />
-                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Panduan & Kontak</h4>
-                  </div>
-                  <div className="space-y-3 text-zinc-400 leading-relaxed">
-                    <p>
-                      <span className="inline-flex items-center gap-1 text-zinc-200 font-semibold"><MapPin className="w-3 h-3 text-cyan-400" /> Peta Interaktif:</span>{" "}
-                      Tekan marker Wi-Fi pada peta untuk melihat detail kapasitas dan access point di setiap gedung secara real-time.
-                    </p>
-                    <p>
-                      <span className="inline-flex items-center gap-1 text-zinc-200 font-semibold"><Users className="w-3 h-3 text-emerald-400" /> Status Keramaian:</span>{" "}
-                      Warna marker menunjukkan tingkat keramaian pengguna (Hijau: Ringan, Kuning: Sedang/Ramai, Merah: Sangat Ramai, Abu-abu: Offline).
-                    </p>
-                    <p>
-                      <span className="inline-flex items-center gap-1 text-zinc-200 font-semibold"><MessageSquare className="w-3 h-3 text-indigo-400" /> Pusat Bantuan UPT TI:</span>{" "}
-                      Mengalami kendala koneksi? Hubungi UPT TI ITATS di Gedung Rektorat Lt. 2 atau buat laporan melalui tombol <strong>Lapor Gangguan</strong>.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </section>
 
           <aside
-            className={`rounded-[2rem] border border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10 transition-all duration-300 hidden lg:block ${rightExpanded ? "w-96 lg:w-96" : "w-16"}`}
+            className={`rounded-[2rem] border transition-all duration-300 hidden lg:block ${rightExpanded ? "w-96 lg:w-96" : "w-16"} ${
+              isDark 
+                ? "border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10" 
+                : "border-black/8 bg-white/92 shadow-xl shadow-slate-200/50"
+            }`}
           >
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 p-4">
+            <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-black/8'}`}>
               {rightExpanded ? (
                 <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-cyan-300/80">
+                  <p className={`text-xs uppercase tracking-[0.24em] ${isDark ? 'text-cyan-300/80' : 'text-cyan-600'}`}>
                     Detail Klik
                   </p>
-                  <p className="text-sm font-semibold text-white">
+                  <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                     Informasi Area
                   </p>
                 </div>
               ) : null}
               <button
                 onClick={() => setRightExpanded((prev) => !prev)}
-                className="rounded-full border border-white/10 bg-zinc-900/80 p-2 text-zinc-300 hover:text-white transition"
+                className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
               >
                 {rightExpanded ? (
                   <ChevronRight className="w-4 h-4" />
@@ -1042,16 +1008,16 @@ export default function PublicMapPage() {
                   <div className="space-y-5">
                     <button
                       onClick={() => setSelectedId(null)}
-                      className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition cursor-pointer pb-2"
+                      className={`inline-flex items-center gap-1.5 text-xs font-semibold transition cursor-pointer pb-2 ${isDark ? 'text-cyan-400 hover:text-cyan-300' : 'text-cyan-700 hover:text-cyan-850'}`}
                     >
                       <ChevronLeft className="w-3.5 h-3.5" />
                       Kembali ke Ringkasan Jaringan
                     </button>
-                    <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                    <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
                       <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
                         Lokasi
                       </p>
-                      <p className="mt-2 text-lg font-semibold text-white">
+                      <p className={`mt-2 text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                         {sanitizePublicName(selectedBuilding.name)}
                       </p>
                       <p
@@ -1065,73 +1031,81 @@ export default function PublicMapPage() {
                           {/* Pengguna WiFi — klikable */}
                           <button
                             onClick={() => setShowUserDetail((v) => !v)}
-                            className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-left transition hover:bg-cyan-500/10 active:scale-[0.97]"
+                            className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 ${
+                              isDark 
+                                ? 'border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10' 
+                                : 'border-cyan-200 bg-cyan-50/40 hover:bg-cyan-100/50'
+                            }`}
                           >
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
-                                <Users className="w-3.5 h-3.5 text-cyan-400" />
-                                <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Pengguna WiFi</p>
+                                <Users className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                                <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'}`}>Pengguna WiFi</p>
                               </div>
-                              <ChevronRight className={`w-3.5 h-3.5 text-cyan-400 transition-transform ${showUserDetail ? "rotate-90" : ""}`} />
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isDark ? 'text-cyan-400' : 'text-cyan-650'} ${showUserDetail ? "rotate-90" : ""}`} />
                             </div>
-                            <p className="mt-1 text-3xl font-bold text-white">
+                            <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-cyan-950'}`}>
                               {selectedBuilding.user_count ?? 0}
                             </p>
-                            <p className="text-[10px] text-cyan-300/60 mt-1">Klik untuk detail</p>
+                            <p className={`text-[10px] mt-1 ${isDark ? 'text-cyan-300/60' : 'text-cyan-600/80'}`}>Klik untuk detail</p>
                           </button>
                           {/* Perangkat — klikable */}
                           <button
                             onClick={() => setShowDeviceDetail((v) => !v)}
-                            className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4 text-left transition hover:bg-slate-800/80 active:scale-[0.97]"
+                            className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 ${
+                              isDark 
+                                ? 'border-zinc-800 bg-slate-900/80 hover:bg-slate-800/80' 
+                                : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100'
+                            }`}
                           >
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
-                                <Building2 className="w-3.5 h-3.5 text-zinc-400" />
-                                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Perangkat</p>
+                                <Building2 className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
+                                <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>Perangkat</p>
                               </div>
-                              <ChevronRight className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${showDeviceDetail ? "rotate-90" : ""}`} />
+                              <ChevronRight className={`w-3.5 h-3.5 text-zinc-550 transition-transform ${showDeviceDetail ? "rotate-90" : ""}`} />
                             </div>
-                            <p className="mt-1 text-3xl font-bold text-white">{selectedBuilding.device_count ?? 0}</p>
-                            <p className="text-[10px] text-zinc-600 mt-1">Klik untuk detail</p>
+                            <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{selectedBuilding.device_count ?? 0}</p>
+                            <p className={`text-[10px] mt-1 ${isDark ? 'text-zinc-600' : 'text-slate-400'}`}>Klik untuk detail</p>
                           </button>
                         </div>
 
                         {/* Panel detail pengguna WiFi */}
                         {showUserDetail && (
-                          <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                          <div className={`rounded-3xl border p-4 ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
                             <div className="flex items-center gap-2 mb-3">
-                              <Users className="w-3.5 h-3.5 text-cyan-400" />
-                              <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Jenis Perangkat Pengguna</p>
+                              <Users className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                              <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'}`}>Jenis Perangkat Pengguna</p>
                             </div>
                             {selectedBuilding.user_breakdown && selectedBuilding.user_breakdown.length > 0 ? (
                               <div className="space-y-2">
                                 {selectedBuilding.user_breakdown.map((item) => (
-                                  <div key={item.label} className="flex items-center justify-between py-1 border-b border-cyan-500/10 last:border-0">
-                                    <span className="text-xs text-zinc-300">{item.label}</span>
-                                    <span className="text-xs font-bold text-cyan-200 bg-cyan-500/10 px-2.5 py-0.5 rounded-full">{item.count} perangkat</span>
+                                  <div key={item.label} className={`flex items-center justify-between py-1 border-b last:border-0 ${isDark ? 'border-cyan-500/10' : 'border-cyan-200/50'}`}>
+                                    <span className={`text-xs ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{item.label}</span>
+                                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${isDark ? 'text-cyan-200 bg-cyan-500/10' : 'text-cyan-800 bg-cyan-100/60'}`}>{item.count} perangkat</span>
                                   </div>
                                 ))}
                               </div>
                             ) : (
                               <p className="text-xs text-zinc-500">Informasi perangkat tidak tersedia saat ini.</p>
                             )}
-                            <p className="text-[10px] text-zinc-600 mt-3">Data anonim — tidak mencantumkan identitas pengguna</p>
+                            <p className={`text-[10px] mt-3 ${isDark ? 'text-zinc-600' : 'text-slate-400'}`}>Data anonim — tidak mencantumkan identitas pengguna</p>
                           </div>
                         )}
 
                         {/* Panel detail perangkat kampus */}
                         {showDeviceDetail && (
-                          <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
+                          <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
                             <div className="flex items-center gap-2 mb-3">
-                              <Cpu className="w-3.5 h-3.5 text-zinc-400" />
-                              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Detail Perangkat Kampus</p>
+                              <Cpu className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-555'}`} />
+                              <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-555'}`}>Detail Perangkat Kampus</p>
                             </div>
-                            {selectedBuilding.device_categories && selectedBuilding.device_categories.length > 0 ? (
+                            {selectedBuilding.device_names && selectedBuilding.device_names.length > 0 ? (
                               <div className="space-y-2">
-                                {selectedBuilding.device_categories.map((cat) => (
-                                  <div key={cat.label} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
-                                    <span className="text-xs text-zinc-300">{cat.label}</span>
-                                    <span className="text-xs font-bold text-white bg-zinc-700/60 px-2.5 py-0.5 rounded-full">{cat.count} unit</span>
+                                {selectedBuilding.device_names.map((name, index) => (
+                                  <div key={index} className={`flex items-center justify-between py-1 border-b last:border-0 ${isDark ? 'border-white/5' : 'border-slate-200'}`}>
+                                    <span className={`text-xs font-semibold ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{name}</span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'text-emerald-300 bg-emerald-500/10' : 'text-emerald-800 bg-emerald-100/50'}`}>Online</span>
                                   </div>
                                 ))}
                               </div>
@@ -1141,19 +1115,19 @@ export default function PublicMapPage() {
                           </div>
                         )}
                       {selectedBuilding.online && (selectedBuilding.bandwidth_download || selectedBuilding.bandwidth_upload) && (
-                        <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                        <div className={`rounded-3xl border p-4 ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
                           <div className="flex items-center gap-2 mb-3">
-                            <ArrowDownUp className="w-3.5 h-3.5 text-cyan-400" />
-                            <p className="text-xs uppercase tracking-[0.2em] text-cyan-400">Bandwidth Real-time</p>
+                            <ArrowDownUp className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                            <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'}`}>Bandwidth Real-time</p>
                           </div>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <p className="text-[10px] text-zinc-500 uppercase tracking-wider">↓ Download</p>
-                              <p className="text-base font-bold text-white mt-1">{selectedBuilding.bandwidth_download ?? "–"}</p>
+                              <p className={`text-base font-bold mt-1 ${isDark ? 'text-white' : 'text-slate-850'}`}>{selectedBuilding.bandwidth_download ?? "–"}</p>
                             </div>
                             <div>
                               <p className="text-[10px] text-zinc-500 uppercase tracking-wider">↑ Upload</p>
-                              <p className="text-base font-bold text-white mt-1">{selectedBuilding.bandwidth_upload ?? "–"}</p>
+                              <p className={`text-base font-bold mt-1 ${isDark ? 'text-white' : 'text-slate-850'}`}>{selectedBuilding.bandwidth_upload ?? "–"}</p>
                             </div>
                           </div>
                         </div>
@@ -1162,27 +1136,27 @@ export default function PublicMapPage() {
                     {/* Kapasitas Total dihapus — selalu 0 karena tidak dikonfigurasi */}
                     {selectedBuilding.floors &&
                       selectedBuilding.floors.length > 0 && (
-                        <div className="rounded-3xl border border-zinc-800 bg-slate-900/80 p-4">
-                          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 mb-3">
+                        <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
+                          <p className={`text-xs uppercase tracking-[0.2em] mb-3 ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>
                             Titik Akses Wi-Fi / Sektor
                           </p>
-                          <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
                             {selectedBuilding.floors.map((floor) => (
                               <div
                                 key={floor.level}
-                                className="rounded-2xl bg-slate-950/80 p-3"
+                                className={`rounded-2xl p-3 ${isDark ? 'bg-slate-950/80' : 'bg-white border border-slate-100 shadow-sm'}`}
                               >
-                                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80 font-semibold mb-2">
+                                <p className={`text-xs uppercase tracking-[0.2em] font-semibold mb-2 ${isDark ? 'text-cyan-300/80' : 'text-cyan-750'}`}>
                                   {floor.level}
                                 </p>
                                 <div className="space-y-2">
                                   {floor.areas.map((area, aIdx) => (
                                     <div
                                       key={aIdx}
-                                      className="flex items-center justify-between gap-2 text-xs bg-slate-900/50 rounded-lg p-2"
+                                      className={`flex items-center justify-between gap-2 text-xs rounded-lg p-2 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`}
                                     >
                                       <div className="flex-1 min-w-0">
-                                        <p className="font-semibold text-white truncate">
+                                        <p className={`font-semibold truncate ${isDark ? 'text-white' : 'text-slate-800'}`}>
                                           {area.name}
                                         </p>
                                         <p className="text-zinc-500 text-[10px]">
@@ -1208,107 +1182,25 @@ export default function PublicMapPage() {
                       )}
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {/* Status Banner */}
-                    <div className={`rounded-3xl border p-4 transition-all duration-300 ${
-                      isAllGood
-                        ? "bg-emerald-500/5 border-emerald-500/20 shadow-lg shadow-emerald-950/10"
-                        : hasIssues
-                        ? "bg-rose-500/5 border-rose-500/20 shadow-lg shadow-rose-950/10"
-                        : "bg-zinc-900/50 border-zinc-800"
+                  <div className="flex flex-col items-center justify-center text-center p-6 py-20 space-y-4">
+                    <div className={`w-16 h-16 rounded-3xl flex items-center justify-center border transition-all duration-300 ${
+                      isDark 
+                        ? 'bg-zinc-900/80 border-zinc-800 text-cyan-400/80 shadow-[0_0_15px_rgba(34,211,238,0.15)]' 
+                        : 'bg-slate-50 border-slate-200 text-cyan-600 shadow-sm'
                     }`}>
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center border flex-shrink-0 ${
-                          isAllGood ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
-                          hasIssues ? "bg-rose-500/10 border-rose-500/20 text-rose-400 animate-pulse" :
-                          "bg-zinc-800 border-zinc-700 text-zinc-400"
-                        }`}>
-                          {isAllGood ? (
-                            <CheckCircle className="w-4.5 h-4.5" />
-                          ) : hasIssues ? (
-                            <AlertTriangle className="w-4.5 h-4.5" />
-                          ) : (
-                            <Activity className="w-4.5 h-4.5" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className={`text-xs font-bold uppercase tracking-wider ${
-                            isAllGood ? "text-emerald-400" : hasIssues ? "text-rose-400" : "text-zinc-400"
-                          }`}>
-                            {isAllGood
-                              ? "Jaringan Normal"
-                              : hasIssues
-                              ? "Gangguan Terdeteksi"
-                              : "Memuat Status..."}
-                          </h4>
-                          <p className="text-[10px] text-zinc-400 truncate mt-0.5 font-medium">
-                            {isAllGood
-                              ? "Semua perangkat beroperasi penuh."
-                              : hasIssues
-                              ? `${status?.network?.offline} perangkat offline saat ini.`
-                              : "Menghubungkan ke server..."}
-                          </p>
-                        </div>
-                      </div>
+                      <Info className="w-8 h-8 animate-pulse" />
                     </div>
-
-                    {/* Riwayat Gangguan Terkini */}
-                    <div className="rounded-3xl border border-zinc-800 bg-slate-900/50 p-4 space-y-3">
-                      <div className="flex items-center gap-2 pb-2 border-b border-white/5">
-                        <Activity className="w-4 h-4 text-cyan-400" />
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Log Gangguan Terkini</h4>
-                      </div>
-                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
-                        {status && status.recentIssues && status.recentIssues.length > 0 ? (
-                          status.recentIssues.map((issue, idx) => (
-                            <div key={idx} className="p-2.5 rounded-2xl bg-zinc-950/60 border border-white/5 flex flex-col gap-1 transition-all duration-200 hover:border-zinc-800">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
-                                  issue.type === 'critical' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                }`}>
-                                  {issue.type === 'critical' ? 'Gangguan' : 'Info'}
-                                </span>
-                                <span className="text-[9px] text-zinc-500 font-mono flex items-center gap-1">
-                                  <Clock className="w-2.5 h-2.5" />
-                                  {new Date(issue.time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-                              <p className="text-xs font-semibold text-zinc-200 line-clamp-1">{issue.title}</p>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="py-6 text-center text-[11px] text-zinc-500">
-                            Tidak ada laporan gangguan aktif.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Panduan Peta & Bantuan */}
-                    <div className="rounded-3xl border border-zinc-800 bg-slate-900/50 p-4 space-y-3">
-                      <div className="flex items-center gap-2 pb-2 border-b border-white/5">
-                        <Zap className="w-4 h-4 text-amber-400" />
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Panduan & Bantuan</h4>
-                      </div>
-                      <div className="space-y-2 text-[11px] text-zinc-400 leading-relaxed">
-                        <p>
-                          📍 <strong className="text-zinc-200">Peta Interaktif:</strong> Klik marker Wi-Fi pada peta untuk melihat detail kapasitas dan access point di setiap gedung secara real-time.
-                        </p>
-                        <p>
-                          🏢 <strong className="text-zinc-200">Status Keramaian:</strong> Warna marker menunjukkan tingkat keramaian pengguna (Hijau: Ringan, Kuning: Sedang/Ramai, Merah: Sangat Ramai, Abu-abu: Offline).
-                        </p>
-                        <p>
-                          📞 <strong className="text-zinc-200">Pusat Bantuan UPT TI:</strong> Mengalami kendala koneksi? Hubungi UPT TI ITATS di Gedung Rektorat Lt. 2 atau buat laporan melalui tombol <strong>Lapor Gangguan</strong>.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Footer Info */}
-                    <div className="text-[10px] text-zinc-600 text-center pt-2 font-mono">
-                      Terakhir diperbarui: {lastRefresh.toLocaleTimeString('id-ID')}
+                    <div className="space-y-1">
+                      <p className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>Pilih Area pada Peta</p>
+                      <p className={`text-xs ${isDark ? 'text-zinc-500' : 'text-slate-500'} leading-relaxed max-w-[240px]`}>
+                        Silakan pilih atau klik salah satu marker gedung/area pada peta untuk melihat detail informasi perangkat, kapasitas, dan status jaringan secara real-time.
+                      </p>
                     </div>
                   </div>
-                )}
+                )} 
+                <div className="text-[10px] text-zinc-600 text-center pt-2 font-mono">
+                    Terakhir diperbarui: {lastRefresh.toLocaleTimeString('id-ID')}
+                </div>
               </div>
             ) : null}
           </aside>

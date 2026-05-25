@@ -3,6 +3,8 @@ import {createRoot} from 'react-dom/client';
 import { SplashScreen } from '@capacitor/splash-screen';
 import Router from './Router';
 import './index.css';
+import './i18n'; // Initialize i18n
+import { LanguageProvider } from './i18n/LanguageContext';
 
 // 1. Langsung sembunyikan native splash agar animasi HTML di index.html muncul instan
 SplashScreen.hide();
@@ -26,6 +28,8 @@ setTimeout(hideBootscreen, 3000);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Router />
+    <LanguageProvider>
+      <Router />
+    </LanguageProvider>
   </StrictMode>,
 );

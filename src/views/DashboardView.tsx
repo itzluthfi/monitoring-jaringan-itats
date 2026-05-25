@@ -5,6 +5,7 @@ import { authFetch } from '../lib/authFetch';
 import { MikroTikDevice } from '../types';
 import { Loader } from '../components/common/Loader';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 function formatBps(val: string|number|undefined) {
   if (val === undefined || Number.isNaN(Number(val))) return '0 bps';
@@ -17,6 +18,7 @@ function formatBps(val: string|number|undefined) {
 }
 
 export function DashboardView() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [stats, setStats] = useState({ total: 0, online: 0, offline: 0, apTotal: 0, apOnline: 0, apOffline: 0 });
   const [currentOnline, setCurrentOnline] = useState(0);
@@ -238,8 +240,8 @@ export function DashboardView() {
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h2 className="text-3xl font-bold text-white tracking-tight">System Dashboard</h2>
-          <p className="text-zinc-400 mt-1">Real-time network telemetrics and density insights.</p>
+          <h2 className="text-3xl font-bold text-white tracking-tight">{t('dashboard.title')}</h2>
+          <p className="text-zinc-400 mt-1">{t('dashboard.networkOverview')}</p>
         </div>
         <div className="flex items-center gap-3">
            <select
@@ -247,15 +249,15 @@ export function DashboardView() {
              onChange={(e) => setSelectedDevice(e.target.value)}
              className="bg-zinc-900 border border-zinc-700 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 outline-none"
            >
-             <option value="all">All Routers (Aggregated)</option>
+             <option value="all">{t('dashboard.routersOnline')}</option>
              {devices.map(d => (
                <option key={d.id} value={d.id}>{d.name} ({d.host})</option>
              ))}
            </select>
-           <button 
+           <button
              onClick={() => setIsSettingsOpen(true)}
              className="p-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-300 hover:text-white transition-all shadow-md"
-             title="Customize Dashboard"
+             title={t('dashboard.customizeLayout')}
            >
              <Settings2 className="w-5 h-5" />
            </button>
@@ -277,10 +279,10 @@ export function DashboardView() {
               </div>
               <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 bg-indigo-500/20 text-indigo-400 rounded-xl"><Users className="w-6 h-6" /></div>
-                <h3 className="font-semibold text-zinc-300 group-hover:text-white transition-colors">Active Wi-Fi Clients</h3>
+                <h3 className="font-semibold text-zinc-300 group-hover:text-white transition-colors">{t('dashboard.activeClients')}</h3>
               </div>
               <div className="text-4xl font-bold text-white tracking-tight">{currentOnline}</div>
-              <p className="text-sm text-indigo-400 mt-2 font-medium">Click to view breakdown</p>
+              <p className="text-sm text-indigo-400 mt-2 font-medium">{t('dashboard.loading')}</p>
             </div>
 
             <div 
@@ -291,14 +293,14 @@ export function DashboardView() {
               </div>
               <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl"><RouterIcon className="w-6 h-6" /></div>
-                <h3 className="font-semibold text-zinc-300 group-hover:text-white transition-colors">Core Routers</h3>
+                <h3 className="font-semibold text-zinc-300 group-hover:text-white transition-colors">{t('dashboard.coreRouters')}</h3>
               </div>
               <div className="flex items-end gap-2">
                  <div className="text-4xl font-bold text-white tracking-tight">{stats.online}</div>
-                 <div className="text-xl text-zinc-500 font-medium mb-1">/ {stats.total} Online</div>
+                 <div className="text-xl text-zinc-500 font-medium mb-1">/ {stats.online} {t('dashboard.online')}</div>
                </div>
               <p className={`text-sm mt-2 font-medium ${stats.offline > 0 ? 'text-rose-400 animate-pulse' : 'text-emerald-400'}`}>
-                {stats.offline} Offline Routers {stats.offline > 0 && '(Click to view)'}
+                {stats.offline} {t('dashboard.offline')} Routers
               </p>
             </div>
 
@@ -310,14 +312,14 @@ export function DashboardView() {
               </div>
               <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 bg-sky-500/20 text-sky-400 rounded-xl"><Wifi className="w-6 h-6" /></div>
-                <h3 className="font-semibold text-zinc-300 group-hover:text-white transition-colors">Access Points</h3>
+                <h3 className="font-semibold text-zinc-300 group-hover:text-white transition-colors">{t('dashboard.accessPoints')}</h3>
               </div>
               <div className="flex items-end gap-2">
                  <div className="text-4xl font-bold text-white tracking-tight">{stats.apOnline}</div>
                  <div className="text-xl text-zinc-500 font-medium mb-1">/ {stats.apTotal} Online</div>
                </div>
               <p className={`text-sm mt-2 font-medium ${stats.apOffline > 0 ? 'text-rose-400 animate-pulse' : 'text-sky-400'}`}>
-                {stats.apOffline > 0 ? `${stats.apOffline} Devices Offline (Click to view)` : `100% Operational`}
+                {stats.apOffline > 0 ? `${stats.apOffline} ${t('dashboard.offline')}` : `100% Operational`}
               </p>
             </div>
 
@@ -425,8 +427,8 @@ export function DashboardView() {
              <div className="lg:col-span-2 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col min-h-[300px] max-h-[824px]">
                <div className="flex items-center justify-between mb-6">
                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                   <Activity className="w-5 h-5 text-emerald-400" /> 
-                   Live Bandwidth Usage
+                   <Activity className="w-5 h-5 text-emerald-400" />
+                   {t('dashboard.liveBandwidth')}
                    {bwConfig.selectedRouterIds.length > 0 && (
                      <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full ml-1">
                        {bwConfig.selectedRouterIds.length} router{bwConfig.selectedRouterIds.length > 1 ? 's' : ''}
@@ -436,7 +438,7 @@ export function DashboardView() {
                  <button
                    onClick={() => setIsBwSettingsOpen(true)}
                    className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                   title="Configure Bandwidth View"
+                   title={t('dashboard.bandwidthUsage')}
                  >
                    <SlidersHorizontal className="w-4 h-4" />
                  </button>
@@ -635,8 +637,8 @@ export function DashboardView() {
             
             <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/80 backdrop-blur-md">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  {activeModal === 'offline_routers' && <><RouterIcon className="w-5 h-5 text-emerald-400" /> Offline Core Routers</>}
-                  {activeModal === 'offline_aps' && <><Wifi className="w-5 h-5 text-sky-400" /> Offline Access Points</>}
+                  {activeModal === 'offline_routers' && <><RouterIcon className="w-5 h-5 text-emerald-400" /> {t('dashboard.offline')} {t('dashboard.coreRouters')}</>}
+                  {activeModal === 'offline_aps' && <><Wifi className="w-5 h-5 text-sky-400" /> {t('dashboard.offline')} {t('dashboard.accessPoints')}</>}
                   {activeModal === 'wifi_clients' && <><Users className="w-5 h-5 text-indigo-400" /> Client Distribution Breakdown</>}
                   {activeModal === 'ai_details' && <><BrainCircuit className="w-5 h-5 text-purple-400" /> AI Congestion Prediction List</>}
                   {activeModal === 'density_details' && <><Activity className="w-5 h-5 text-indigo-400" /> Campus Density History</>}
@@ -742,7 +744,7 @@ export function DashboardView() {
                            </div>
                         </div>
                      )) : (
-                        <div className="text-center text-emerald-500 font-medium py-10 bg-emerald-500/10 rounded-xl border border-emerald-500/20">All Routers are currently Online!</div>
+                        <div className="text-center text-emerald-500 font-medium py-10 bg-emerald-500/10 rounded-xl border border-emerald-500/20">{t('dashboard.routersOnline')}</div>
                      )}
                   </div>
                 )}
@@ -763,7 +765,7 @@ export function DashboardView() {
                            </div>
                         </div>
                      )) : (
-                        <div className="text-center text-emerald-500 font-medium py-10 bg-emerald-500/10 rounded-xl border border-emerald-500/20">All Access Points are currently Online!</div>
+                        <div className="text-center text-emerald-500 font-medium py-10 bg-emerald-500/10 rounded-xl border border-emerald-500/20">{t('dashboard.apsOnline')}</div>
                      )}
                   </div>
                 )}
@@ -779,7 +781,7 @@ export function DashboardView() {
           <div className="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/80">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <SlidersHorizontal className="w-5 h-5 text-emerald-400" /> Configure Live Bandwidth
+                <SlidersHorizontal className="w-5 h-5 text-emerald-400" /> {t('dashboard.bandwidthUsage')}
               </h3>
               <button onClick={() => setIsBwSettingsOpen(false)} className="text-zinc-500 hover:text-white bg-zinc-800/50 hover:bg-zinc-700 p-1.5 rounded-lg transition-colors"><X className="w-4 h-4"/></button>
             </div>
@@ -814,7 +816,7 @@ export function DashboardView() {
               
               {/* Interface Type Filters */}
               <div>
-                <h4 className="text-sm font-semibold text-zinc-300 mb-3">Filter Tipe Interface</h4>
+                <h4 className="text-sm font-semibold text-zinc-300 mb-3">{t('vlan.filterType')}</h4>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { key: 'showEther', label: 'Ethernet', color: 'cyan' },
@@ -834,7 +836,7 @@ export function DashboardView() {
 
               {/* View Mode Toggle */}
               <div>
-                <h4 className="text-sm font-semibold text-zinc-300 mb-3">Mode Tampilan Bandwidth</h4>
+                <h4 className="text-sm font-semibold text-zinc-300 mb-3">{t('dashboard.bandwidthUsage')}</h4>
                 <div className="flex bg-zinc-950/80 p-1.5 rounded-xl border border-zinc-800">
                   <button onClick={() => saveBwConfig({ ...bwConfig, viewMode: 'text' })} className={`flex-1 flex justify-center items-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${bwConfig.viewMode === 'text' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}>
                     <Activity className="w-4 h-4" /> Mode Teks & VLAN

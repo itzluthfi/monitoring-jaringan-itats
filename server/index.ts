@@ -307,24 +307,61 @@ setInterval(async () => {
           }
         }
       } catch (err: any) {
+        // Extract meaningful error details from the error object
+        const deviceHost = device.host || 'unknown';
+        const deviceName = device.name || 'Unknown Device';
+
+        // Parse error to get actual message
         let errorMsg = "Gagal koneksi ke router";
-        if (err.errno === -4078) errorMsg = "Koneksi Ditolak (Cek apakah Port 8728 API sudah aktif di MikroTik)";
-        else if (err.errno === 'CANTLOGIN') errorMsg = "Username/Password Salah";
-        else if (err.code === 'ETIMEDOUT') errorMsg = "Koneksi Timeout (Router tidak merespons)";
-        
-        console.error(`\x1b[31m[Log-Archive] ❌ ${device.name}: ${errorMsg}\x1b[0m`);
+        let errorType = "critical,system";
+
+        // Check for specific error patterns
+        const errMsg = err?.message || String(err);
+        const errErrno = err?.errno || '';
+        const errCode = err?.code || '';
+        const errStack = err?.stack || '';
+
+        if (errMsg.includes('Username or password is invalid') || errMsg.includes('CANTLOGIN')) {
+          errorMsg = `Username atau Password MikroTik salah untuk ${deviceName} (${deviceHost})`;
+          errorType = "critical,auth";
+        } else if (errMsg.includes('Connection refused') || errErrno === -4078 || errCode === 'ECONNREFUSED') {
+          errorMsg = `Koneksi ditolak oleh ${deviceName} (${deviceHost}). Pastikan API MikroTik sudah aktif di port 8728`;
+          errorType = "error,network";
+        } else if (errMsg.includes('Timed out') || errErrno === 'ETIMEDOUT' || errCode === 'ETIMEDOUT') {
+          errorMsg = `Koneksi timeout ke ${deviceName} (${deviceHost}). Router tidak merespons dalam waktu yang ditentukan`;
+          errorType = "warning,network";
+        } else if (errMsg.includes('ENOTFOUND') || errMsg.includes('getaddrinfo')) {
+          errorMsg = `Hostname/IP tidak ditemukan: ${deviceHost}. Pastikan alamat router benar`;
+          errorType = "error,config";
+        } else if (errMsg.includes('RosException') || errStack.includes('RosException')) {
+          // Extract the specific RosException message
+          const rosMatch = errMsg.match(/RosException[:\s]*(.+?)(?:\n|$)/);
+          const rosMsg = rosMatch ? rosMatch[1].trim() : errMsg;
+          errorMsg = `RosException dari ${deviceName} (${deviceHost}): ${rosMsg}`;
+          errorType = "error,routeros";
+        } else if (errMsg.includes('ECONNRESET')) {
+          errorMsg = `Koneksi direset oleh ${deviceName} (${deviceHost}). Router mungkin overload atau koneksi terputus`;
+          errorType = "warning,network";
+        } else {
+          // Use actual error message, truncate if too long
+          const actualMsg = errMsg.length > 200 ? errMsg.substring(0, 200) + '...' : errMsg;
+          errorMsg = `[${deviceName} (${deviceHost})] ${actualMsg}`;
+          errorType = "error,system";
+        }
+
+        console.error(`\x1b[31m[Log-Archive] ❌ ${deviceName}: ${errorMsg}\x1b[0m`);
 
         // Log connection error to database so user sees it in LogsView
         try {
           const time = new Date().toLocaleTimeString('en-US', { hour12: false });
           const [recentError]: any = await db.query(
-            "SELECT id FROM mikrotik_logs WHERE device_id = ? AND topics = 'critical,system' AND message LIKE ? AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1",
-            [device.id, `%${errorMsg}%`]
+            "SELECT id FROM mikrotik_logs WHERE device_id = ? AND topics = ? AND message LIKE ? AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1",
+            [device.id, errorType, `%${errorMsg.substring(0, 50)}%`]
           );
           if (recentError.length === 0) {
             await db.query(
               "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
-              [device.id, '*err', time, 'critical,system', `[System Error] ${errorMsg}`]
+              [device.id, '*err', time, errorType, `[System Error] ${errorMsg}`]
             );
           }
         } catch (dbErr) {

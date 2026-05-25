@@ -151,6 +151,7 @@ publicRouter.get("/campus-map", async (req, res) => {
           let deviceCount = 0;
           const deviceCategoryMap: Record<string, number> = {};
           const userBreakdownMap: Record<string, number> = {};
+          const deviceNames: string[] = [];
           let bwRxBps = 0;
           let bwTxBps = 0;
 
@@ -212,6 +213,8 @@ publicRouter.get("/campus-map", async (req, res) => {
                     deviceCount++;
                     const cat = classifyDevice(lease.hostname);
                     deviceCategoryMap[cat] = (deviceCategoryMap[cat] || 0) + 1;
+                    const dName = lease.hostname || lease.comment || "Perangkat Kampus";
+                    deviceNames.push(sanitizeName(dName));
                   }
                 });
               }
@@ -259,6 +262,13 @@ publicRouter.get("/campus-map", async (req, res) => {
             userBreakdownMap["iPhone / iPad"] = Math.floor(userCount * 0.2);
             userBreakdownMap["Laptop"] = Math.floor(userCount * 0.15);
             userBreakdownMap["Perangkat Tidak Dikenal"] = userCount - Math.floor(userCount * 0.85);
+            const baseName = sanitizeName(device.name);
+            for (let i = 1; i <= deviceCount; i++) {
+              if (i <= 3) deviceNames.push(`Access Point ${baseName} ${i.toString().padStart(2, '0')}`);
+              else if (i <= 8) deviceNames.push(`Komputer Lab ${baseName} ${(i - 3).toString().padStart(2, '0')}`);
+              else if (i <= 10) deviceNames.push(`Printer ${baseName} ${(i - 8).toString().padStart(2, '0')}`);
+              else deviceNames.push(`CCTV ${baseName} ${(i - 10).toString().padStart(2, '0')}`);
+            }
             bwRxBps = Math.floor(Math.random() * 80_000_000);
             bwTxBps = Math.floor(Math.random() * 30_000_000);
           }
@@ -330,6 +340,7 @@ publicRouter.get("/campus-map", async (req, res) => {
             user_breakdown,
             device_count: deviceCount,
             device_categories,
+            device_names: deviceNames,
             density,
             load_label: loadLabel,
             bandwidth_download: online && bwRxBps > 0 ? formatBps(bwRxBps) : null,

@@ -4,8 +4,10 @@ import {
   Volume2, Play, MessageSquare, Plus, Check, Activity, Link2, User, UserPlus, Eye, EyeOff,
   MailCheck, KeyRound, Pencil, UserX, RefreshCw, Lock, BookOpen, Smartphone
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
+import { useLanguage } from '../i18n/LanguageContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 
@@ -29,7 +31,7 @@ interface SoundEntry {
 
 // ─── Tab definitions ───────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'general',      label: 'General',      icon: SettingsIcon },
+  { id: 'general',      label: 'General',      icon: SettingsIcon }, // Will be translated in render
   { id: 'monitoring',   label: 'Monitoring',   icon: Activity },
   { id: 'audio',        label: 'Audio',        icon: Volume2 },
   { id: 'integrations', label: 'Integrations', icon: Link2 },
@@ -44,6 +46,9 @@ const maskSecret = (val: string) =>
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function SettingsView() {
+  const { t } = useTranslation();
+  const { language, changeLanguage } = useLanguage();
+
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>(
@@ -53,6 +58,7 @@ export function SettingsView() {
   // ── General state ──
   const [pollingRate, setPollingRate]   = useState(10);
   const [theme, setTheme]               = useState(localStorage.getItem('theme') || 'dark');
+  const [appLanguage, setAppLanguage]   = useState(language);
 
   // ── Monitoring state ──
   const [aiEnabled, setAiEnabled]         = useState(true);
@@ -165,8 +171,11 @@ export function SettingsView() {
         post('telegram_bot_token', telegramToken),
         post('telegram_chat_id', telegramChatId),
         post('simulation_mode', String(simulationMode)),
+        post('app_language', appLanguage),
       ]);
-      toast.success('Pengaturan berhasil disimpan!');
+      // Apply language change
+      await changeLanguage(appLanguage);
+      toast.success(t('settings.saved'));
     } catch { toast.error('Gagal menyimpan pengaturan'); }
     finally { setSaving(false); }
   };
@@ -327,7 +336,7 @@ export function SettingsView() {
                 : 'text-zinc-400 hover:text-white hover:bg-white/5'
               }`}
           >
-            <Icon className="w-4 h-4" /> {label}
+            <Icon className="w-4 h-4" /> {id === 'general' ? t('settings.general') : id === 'monitoring' ? t('settings.monitoring') : id === 'audio' ? t('settings.audio') : id === 'integrations' ? t('settings.integrations') : t('settings.security')}
             {id === 'security' && admins.length > 0 && (
               <span className="ml-1 bg-white/20 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{admins.filter(a => a.is_active).length}</span>
             )}
@@ -354,8 +363,18 @@ export function SettingsView() {
                 <div className="relative">
                   {theme === 'dark' ? <Moon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" /> : <Sun className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400" />}
                   <select value={theme} onChange={e => setTheme(e.target.value)} className={`${inputCls} pl-10 appearance-none`}>
-                    <option value="dark">Deep Space (Dark)</option>
-                    <option value="light">Pure Arctic (Light)</option>
+                    <option value="dark">{t('settings.generalTab.darkTheme')}</option>
+                    <option value="light">{t('settings.generalTab.lightTheme')}</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest block mb-2">{t('settings.generalTab.language')}</label>
+                <div className="relative">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
+                  <select value={appLanguage} onChange={e => setAppLanguage(e.target.value)} className={`${inputCls} pl-10 appearance-none`}>
+                    <option value="id">Bahasa Indonesia</option>
+                    <option value="en">English</option>
                   </select>
                 </div>
               </div>

@@ -6,8 +6,10 @@ import { Loader } from '../components/common/Loader';
 import { encryptId, decryptId } from '../lib/encryption';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 
 export function DevicesView() {
+  const { t } = useTranslation();
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
