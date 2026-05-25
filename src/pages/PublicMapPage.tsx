@@ -142,6 +142,35 @@ export default function PublicMapPage() {
     return next;
   });
 
+  const [activeBuilding, setActiveBuilding] = useState<PublicMapBuilding | null>(null);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedBuilding) {
+      setActiveBuilding(selectedBuilding);
+    }
+  }, [selectedBuilding]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.targetTouches[0].clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientY);
+  };
+
+  const handleTouchEnd = (onDismiss: () => void) => {
+    if (touchStart === null || touchEnd === null) return;
+    const distance = touchEnd - touchStart;
+    const isSwipeDown = distance > 70;
+    if (isSwipeDown) {
+      onDismiss();
+    }
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
+
   const baseUrl = import.meta.env.VITE_API_URL || "";
 
   useEffect(() => {
@@ -238,10 +267,22 @@ export default function PublicMapPage() {
 
   const getDensityColor = (building: PublicMapBuilding) => {
     if (!building.online) return "#9ca3af"; // gray for offline
+    const userCount = building.user_count ?? 0;
+    if (userCount === 0) return "#9ca3af"; // gray for 0 users
     const density = building.density ?? 0;
-    if (density >= 90) return "#dc2626";
-    if (density >= 70) return "#f59e0b";
-    return "#22c55e";
+    if (density >= 80) return "#dc2626"; // red
+    if (density >= 40) return "#f59e0b"; // yellow
+    return "#22c55e"; // green
+  };
+
+  const getDensityStatusText = (building: PublicMapBuilding) => {
+    if (!building.online) return "Offline";
+    const userCount = building.user_count ?? 0;
+    if (userCount === 0) return "Sepi (0%)";
+    const density = building.density ?? 0;
+    if (density >= 80) return `Padat (${density}%)`;
+    if (density >= 40) return `Sedang (${density}%)`;
+    return `Sepi (${density}%)`;
   };
 
   const getDensityLabel = (building: PublicMapBuilding) => {
@@ -259,12 +300,31 @@ export default function PublicMapPage() {
     building.online ? "text-emerald-300" : "text-rose-400";
 
   const getDensityBadgeClass = (building: PublicMapBuilding) => {
-    if (!building.online)
-      return "bg-rose-500/10 text-rose-300 border border-rose-500/20";
+    if (!building.online) {
+      return isDark
+        ? "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+        : "bg-zinc-100 text-zinc-600 border border-zinc-200";
+    }
+    const userCount = building.user_count ?? 0;
+    if (userCount === 0) {
+      return isDark
+        ? "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+        : "bg-zinc-100 text-zinc-600 border border-zinc-200";
+    }
     const density = building.density ?? 0;
-    if (density >= 70)
-      return "bg-amber-500/10 text-amber-300 border border-amber-500/20";
-    return "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20";
+    if (density >= 80) {
+      return isDark
+        ? "bg-rose-500/10 text-rose-300 border border-rose-500/20"
+        : "bg-rose-50 text-rose-700 border border-rose-200";
+    }
+    if (density >= 40) {
+      return isDark
+        ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+        : "bg-amber-50 text-amber-700 border border-amber-250";
+    }
+    return isDark
+      ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+      : "bg-emerald-50 text-emerald-700 border border-emerald-200";
   };
 
   const getWifiIcon = (building: PublicMapBuilding) => {
@@ -302,18 +362,32 @@ export default function PublicMapPage() {
   return (
     <div className={`min-h-screen font-sans transition-colors duration-300 ${isDark ? 'bg-[#08111f] text-zinc-100' : 'bg-[#eef2f9] text-slate-900 pub-light'}`}>
       {/* Mobile Search Drawer */}
-      {leftExpanded && isMobile && (
-        <div className={`fixed inset-0 z-[700] flex flex-col backdrop-blur-xl lg:hidden ${isDark ? 'bg-slate-950/95 text-zinc-100' : 'bg-white/95 text-slate-900'}`}>
-          <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
-            <h2 className="text-lg font-semibold">Cari Area</h2>
-            <button
-              onClick={() => setLeftExpanded(false)}
-              className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
-            >
-              ✕
-            </button>
+      {isMobile && (
+        <div 
+          className={`fixed inset-x-0 bottom-0 top-16 z-[700] flex flex-col rounded-t-[2.5rem] border-t shadow-2xl transition-all duration-300 ease-out lg:hidden ${
+            isDark ? 'bg-slate-950/98 text-zinc-100 border-white/10' : 'bg-white text-slate-900 border-slate-200'
+          } ${leftExpanded ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}
+        >
+          <div 
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={() => handleTouchEnd(() => setLeftExpanded(false))}
+            className="flex flex-col flex-shrink-0 cursor-pointer pt-3 pb-1"
+          >
+            <div className="flex justify-center mb-2">
+              <div className={`w-12 h-1.5 rounded-full ${isDark ? 'bg-zinc-800' : 'bg-slate-350'}`} />
+            </div>
+            <div className={`flex items-center justify-between gap-3 border-b px-4 pb-3 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
+              <h2 className="text-lg font-semibold">Cari Area</h2>
+              <button
+                onClick={() => setLeftExpanded(false)}
+                className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto space-y-4 p-4">
+          <div className="flex-1 overflow-y-auto space-y-4 p-4 pb-12">
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <input
@@ -336,7 +410,7 @@ export default function PublicMapPage() {
                     setSelectedId(building.id);
                     setLeftExpanded(false);
                   }}
-                  className={`w-full rounded-3xl border p-3 text-left transition duration-200 ${
+                  className={`w-full rounded-3xl border p-3 text-left transition duration-200 select-none active:scale-[0.98] ${
                     selectedId === building.id 
                       ? isDark ? "border-cyan-400/40 bg-cyan-500/10" : "border-cyan-400 bg-cyan-50" 
                       : isDark ? "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90" : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-100/70"
@@ -353,9 +427,9 @@ export default function PublicMapPage() {
                       </p>
                     </div>
                     <span
-                      className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getDensityBadgeClass(building)}`}
+                      className={`rounded-full px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${getDensityBadgeClass(building)}`}
                     >
-                      {building.density ?? 0}%
+                      {getDensityStatusText(building)}
                     </span>
                   </div>
                 </button>
@@ -368,32 +442,44 @@ export default function PublicMapPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Mobile Detail Drawer */}
-      {rightExpanded && isMobile && selectedBuilding && (
-        <div className={`fixed inset-0 z-[700] flex flex-col backdrop-blur-xl lg:hidden ${isDark ? 'bg-slate-950/95 text-zinc-100' : 'bg-white/95 text-slate-900'}`}>
-          <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
-            <h2 className="text-lg font-semibold">Detail Area</h2>
-            <button
-              onClick={() => setRightExpanded(false)}
-              className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
-            >
-              ✕
-            </button>
+      )}      {/* Mobile Detail Drawer */}
+      {isMobile && activeBuilding && (
+        <div 
+          className={`fixed inset-x-0 bottom-0 top-16 z-[700] flex flex-col rounded-t-[2.5rem] border-t shadow-2xl transition-all duration-300 ease-out lg:hidden ${
+            isDark ? 'bg-slate-950/98 text-zinc-100 border-white/10' : 'bg-white text-slate-900 border-slate-200'
+          } ${rightExpanded ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}
+        >
+          <div 
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={() => handleTouchEnd(() => setRightExpanded(false))}
+            className="flex flex-col flex-shrink-0 cursor-pointer pt-3 pb-1"
+          >
+            <div className="flex justify-center mb-2">
+              <div className={`w-12 h-1.5 rounded-full ${isDark ? 'bg-zinc-800' : 'bg-slate-350'}`} />
+            </div>
+            <div className={`flex items-center justify-between gap-3 border-b px-4 pb-3 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
+              <h2 className="text-lg font-semibold">Detail Area</h2>
+              <button
+                onClick={() => setRightExpanded(false)}
+                className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto space-y-4 p-4">
+          <div className="flex-1 overflow-y-auto space-y-4 p-4 pb-12">
             <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
               <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
                 Lokasi
               </p>
               <p className={`mt-2 text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
-                {sanitizePublicName(selectedBuilding.name)}
+                {sanitizePublicName(activeBuilding.name)}
               </p>
               <p
-                className={`mt-1 text-xs uppercase tracking-[0.2em] ${getStatusLabelClass(selectedBuilding)}`}
+                className={`mt-1 text-xs uppercase tracking-[0.2em] ${getStatusLabelClass(activeBuilding)}`}
               >
-                {selectedBuilding.online ? "Online" : "Offline"}
+                {activeBuilding.online ? "Online" : "Offline"}
               </p>
             </div>
             <div className="grid gap-3">
@@ -401,7 +487,7 @@ export default function PublicMapPage() {
                 {/* Pengguna WiFi — klikable */}
                 <button
                   onClick={() => setShowUserDetail((v) => !v)}
-                  className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 ${
+                  className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 select-none ${
                     isDark 
                       ? 'border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10' 
                       : 'border-cyan-200 bg-cyan-50/40 hover:bg-cyan-100/50'
@@ -414,13 +500,13 @@ export default function PublicMapPage() {
                     </div>
                     <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isDark ? 'text-cyan-400' : 'text-cyan-650'} ${showUserDetail ? "rotate-90" : ""}`} />
                   </div>
-                  <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-cyan-950'}`}>{selectedBuilding.user_count ?? 0}</p>
+                  <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-cyan-950'}`}>{activeBuilding.user_count ?? 0}</p>
                   <p className={`text-[10px] mt-1 ${isDark ? 'text-cyan-300/60' : 'text-cyan-600/80'}`}>Ketuk untuk detail</p>
                 </button>
                 {/* Perangkat — klikable */}
                 <button
                   onClick={() => setShowDeviceDetail((v) => !v)}
-                  className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 ${
+                  className={`rounded-3xl border text-left transition active:scale-[0.97] p-4 select-none ${
                     isDark 
                       ? 'border-zinc-800 bg-slate-900/80 hover:bg-slate-800/80' 
                       : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100'
@@ -428,12 +514,12 @@ export default function PublicMapPage() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <Building2 className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
-                      <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-550'}`}>Perangkat</p>
+                      <Building2 className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-550'}`} />
+                      <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-555'}`}>Perangkat</p>
                     </div>
-                    <ChevronRight className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${showDeviceDetail ? "rotate-90" : ""}`} />
+                    <ChevronRight className={`w-3.5 h-3.5 text-zinc-550 transition-transform ${showDeviceDetail ? "rotate-90" : ""}`} />
                   </div>
-                  <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{selectedBuilding.device_count ?? 0}</p>
+                  <p className={`mt-1 text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{activeBuilding.device_count ?? 0}</p>
                   <p className={`text-[10px] mt-1 ${isDark ? 'text-zinc-650' : 'text-slate-400'}`}>Ketuk untuk detail</p>
                 </button>
               </div>
@@ -445,9 +531,9 @@ export default function PublicMapPage() {
                     <Users className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
                     <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-755'}`}>Jenis Perangkat Pengguna</p>
                   </div>
-                  {selectedBuilding.user_breakdown && selectedBuilding.user_breakdown.length > 0 ? (
+                  {activeBuilding.user_breakdown && activeBuilding.user_breakdown.length > 0 ? (
                     <div className="space-y-2">
-                      {selectedBuilding.user_breakdown.map((item) => (
+                      {activeBuilding.user_breakdown.map((item) => (
                         <div key={item.label} className={`flex items-center justify-between py-1 border-b last:border-0 ${isDark ? 'border-cyan-500/10' : 'border-cyan-200/50'}`}>
                           <span className={`text-xs ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{item.label}</span>
                           <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${isDark ? 'text-cyan-200 bg-cyan-500/10' : 'text-cyan-800 bg-cyan-100/50'}`}>{item.count} perangkat</span>
@@ -468,9 +554,9 @@ export default function PublicMapPage() {
                     <Cpu className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-550'}`} />
                     <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-555'}`}>Detail Perangkat Kampus</p>
                   </div>
-                  {selectedBuilding.device_names && selectedBuilding.device_names.length > 0 ? (
+                  {activeBuilding.device_names && activeBuilding.device_names.length > 0 ? (
                     <div className="space-y-2">
-                      {selectedBuilding.device_names.map((name, index) => (
+                      {activeBuilding.device_names.map((name, index) => (
                         <div key={index} className={`flex items-center justify-between py-1 border-b last:border-0 ${isDark ? 'border-white/5' : 'border-slate-200'}`}>
                           <span className={`text-xs font-semibold ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{name}</span>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'text-emerald-300 bg-emerald-500/10' : 'text-emerald-800 bg-emerald-100/50'}`}>Online</span>
@@ -482,7 +568,7 @@ export default function PublicMapPage() {
                   )}
                 </div>
               )}
-              {selectedBuilding.online && (selectedBuilding.bandwidth_download || selectedBuilding.bandwidth_upload) && (
+              {activeBuilding.online && (activeBuilding.bandwidth_download || activeBuilding.bandwidth_upload) && (
                 <div className={`rounded-3xl border p-4 ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
                   <div className="flex items-center gap-2 mb-2">
                     <ArrowDownUp className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
@@ -491,16 +577,61 @@ export default function PublicMapPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <p className="text-[10px] text-zinc-500">↓ Download</p>
-                      <p className={`text-sm font-bold mt-0.5 ${isDark ? 'text-white' : 'text-slate-850'}`}>{selectedBuilding.bandwidth_download ?? "–"}</p>
+                      <p className={`text-sm font-bold mt-0.5 ${isDark ? 'text-white' : 'text-slate-850'}`}>{activeBuilding.bandwidth_download ?? "–"}</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-zinc-500">↑ Upload</p>
-                      <p className={`text-sm font-bold mt-0.5 ${isDark ? 'text-white' : 'text-slate-850'}`}>{selectedBuilding.bandwidth_upload ?? "–"}</p>
+                      <p className={`text-sm font-bold mt-0.5 ${isDark ? 'text-white' : 'text-slate-850'}`}>{activeBuilding.bandwidth_upload ?? "–"}</p>
                     </div>
                   </div>
                 </div>
               )}
             </div>
+            {activeBuilding.floors && activeBuilding.floors.length > 0 && (
+              <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
+                <p className={`text-xs uppercase tracking-[0.2em] mb-3 ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>
+                  Titik Akses Wi-Fi / Sektor
+                </p>
+                <div className="space-y-3">
+                  {activeBuilding.floors.map((floor) => (
+                    <div
+                      key={floor.level}
+                      className={`rounded-2xl p-3 ${isDark ? 'bg-slate-950/80' : 'bg-white border border-slate-100 shadow-sm'}`}
+                    >
+                      <p className={`text-xs uppercase tracking-[0.2em] font-semibold mb-2 ${isDark ? 'text-cyan-300/80' : 'text-cyan-755'}`}>
+                        {floor.level}
+                      </p>
+                      <div className="space-y-2">
+                        {floor.areas.map((area, aIdx) => (
+                          <div
+                            key={aIdx}
+                            className={`flex items-center justify-between gap-2 text-xs rounded-lg p-2 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className={`font-semibold truncate ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                                {area.name}
+                              </p>
+                              <p className="text-zinc-500 text-[10px]">
+                                {area.current} pengguna
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
+                                area.online
+                                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                  : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                              }`}
+                            >
+                              {area.online ? "Online" : "Offline"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -580,30 +711,49 @@ export default function PublicMapPage() {
             </div>
             <div className="flex gap-3 items-center">
               {/* Lapor Gangguan */}
+              <button
+                onClick={() => (window.location.href = "/report")}
+                className={`relative inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] cursor-pointer shadow-lg ${
+                  isDark 
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-300 shadow-rose-950/20' 
+                    : 'border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 shadow-rose-100/50'
+                }`}
+              >
+                <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+                <Plus className="w-4 h-4 text-rose-500" />
+                Lapor Gangguan
+              </button>
+              <button
+                onClick={() => (window.location.href = "/status-board")}
+                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] cursor-pointer ${
+                  isDark ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20' : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4 text-indigo-400" />
+                Status Tiket
+              </button>
+              <button
+                onClick={() => (window.location.href = "/login")}
+                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all hover:scale-[1.02] cursor-pointer ${
+                  isDark ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20' : 'border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-700'
+                }`}
+              >
+                <Shield className="w-4 h-4 text-cyan-400" />
+                Admin
+              </button>
+              {/* Info Panduan */}
               <div className="relative">
                 <button
-                  onClick={() => (window.location.href = "/report")}
-                  className={`relative inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] cursor-pointer shadow-lg ${
-                    isDark 
-                      ? 'border-rose-500/30 bg-rose-500/10 text-rose-300 shadow-rose-950/20' 
-                      : 'border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 shadow-rose-100/50'
-                  }`}
-                >
-                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                  </span>
-                  <Plus className="w-4 h-4 text-rose-500" />
-                  Lapor Gangguan
-                </button>
-                <button
                   onClick={() => setShowInfoTooltip((v) => !v)}
-                  className={`ml-1 inline-flex items-center justify-center w-6 h-6 rounded-full border transition ${
-                    isDark ? 'border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/40' : 'border-slate-200 bg-slate-50 text-slate-500 hover:text-cyan-600'
+                  className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl border transition ${
+                    isDark ? 'border-zinc-700 bg-zinc-900/80 text-zinc-200 hover:bg-zinc-800' : 'border-slate-350 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                   title="Cara melaporkan gangguan"
                 >
-                  <Info className="w-3.5 h-3.5" />
+                  <Info className="w-4 h-4" />
                 </button>
                 {showInfoTooltip && (
                   <div className={`absolute top-12 right-0 z-[600] w-72 rounded-2xl border shadow-2xl p-4 ${isDark ? 'border-cyan-500/20 bg-slate-950 shadow-cyan-950/30 text-zinc-100' : 'border-cyan-200 bg-white shadow-cyan-100/50 text-slate-700'}`}>
@@ -624,24 +774,6 @@ export default function PublicMapPage() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => (window.location.href = "/status-board")}
-                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] cursor-pointer ${
-                  isDark ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20' : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
-                }`}
-              >
-                <MessageSquare className="w-4 h-4 text-indigo-400" />
-                Status Tiket
-              </button>
-              <button
-                onClick={() => (window.location.href = "/login")}
-                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all hover:scale-[1.02] cursor-pointer ${
-                  isDark ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20' : 'border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-700'
-                }`}
-              >
-                <Shield className="w-4 h-4 text-cyan-400" />
-                Admin
-              </button>
               <button
                 onClick={toggleTheme}
                 className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl border transition ${
@@ -741,12 +873,12 @@ export default function PublicMapPage() {
                 : "border-black/8 bg-white/92 shadow-xl shadow-slate-200/50"
             }`}
           >
-            <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-black/8'}`}>
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-cyan-500/10 p-2 text-cyan-300">
-                  <Wifi className="w-4 h-4" />
-                </div>
-                {leftExpanded ? (
+            <div className={`flex items-center ${leftExpanded ? 'justify-between' : 'justify-center'} gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-black/8'}`}>
+              {leftExpanded ? (
+                <div className="flex items-center gap-3">
+                  <div className="rounded-2xl bg-cyan-500/10 p-2 text-cyan-300">
+                    <Wifi className="w-4 h-4" />
+                  </div>
                   <div>
                     <p className={`text-xs uppercase tracking-[0.24em] ${isDark ? 'text-cyan-300/80' : 'text-cyan-600'}`}>
                       Panel Informasi
@@ -755,8 +887,8 @@ export default function PublicMapPage() {
                       Ringkasan Jaringan
                     </p>
                   </div>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
               <button
                 onClick={() => setLeftExpanded((prev) => !prev)}
                 className={`rounded-full border p-2 transition ${isDark ? 'border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`}
@@ -803,23 +935,6 @@ export default function PublicMapPage() {
                       Status
                     </button>
                   </div>
-                </div>
-                {/* Stats: Total Pengguna WiFi + Perangkat Kampus */}
-                <div className={`rounded-3xl border p-4 ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className={`w-3.5 h-3.5 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
-                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-700'}`}>Total Pengguna WiFi</p>
-                  </div>
-                  <p className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-cyan-950'}`}>{totalCurrent}</p>
-                  <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-slate-500'} mt-1`}>seluruh area kampus</p>
-                </div>
-                <div className={`rounded-3xl border p-4 ${isDark ? 'border-zinc-800 bg-slate-900/80' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building2 className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
-                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>Perangkat Kampus</p>
-                  </div>
-                  <p className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{totalDevices}</p>
-                  <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-slate-500'} mt-1`}>seluruh area kampus</p>
                 </div>
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-3">
@@ -872,9 +987,9 @@ export default function PublicMapPage() {
                           </p>
                         </div>
                         <span
-                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getDensityBadgeClass(building)}`}
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${getDensityBadgeClass(building)}`}
                         >
-                          {building.density ?? 0}%
+                          {getDensityStatusText(building)}
                         </span>
                       </div>
                     </button>
@@ -895,29 +1010,60 @@ export default function PublicMapPage() {
                 ? 'border-white/10 bg-slate-950/90 shadow-2xl shadow-cyan-500/10' 
                 : 'border-black/8 bg-white/92 shadow-xl shadow-slate-200/50'
             }`}>
-              <div className="grid gap-3 md:gap-4 grid-cols-2 md:grid-cols-3">
+              <div className="grid gap-3 md:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
                 <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
-                    Online
-                  </p>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                      Online
+                    </p>
+                    <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                  </div>
                   <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-600'}`}>
                     {status?.network?.online ?? "-"}
                   </p>
                 </div>
                 <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
-                    Offline
-                  </p>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                      Offline
+                    </p>
+                    <AlertTriangle className={`w-4 h-4 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
+                  </div>
                   <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-amber-300' : 'text-amber-600'}`}>
                     {status?.network?.offline ?? "-"}
                   </p>
                 </div>
-                <div className={`rounded-3xl border p-3 md:p-5 col-span-2 md:col-span-1 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
-                    Gedung
-                  </p>
+                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                      Gedung
+                    </p>
+                    <Building2 className={`w-4 h-4 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                  </div>
                   <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-cyan-300' : 'text-cyan-600'}`}>
                     {buildings.length}
+                  </p>
+                </div>
+                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'} line-clamp-1`}>
+                      Pengguna
+                    </p>
+                    <Users className={`w-4 h-4 ${isDark ? 'text-cyan-400' : 'text-cyan-650'}`} />
+                  </div>
+                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-cyan-300' : 'text-cyan-600'}`}>
+                    {totalCurrent}
+                  </p>
+                </div>
+                <div className={`rounded-3xl border p-3 md:p-5 col-span-2 sm:col-span-1 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                      Perangkat
+                    </p>
+                    <Cpu className={`w-4 h-4 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
+                  </div>
+                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                    {totalDevices}
                   </p>
                 </div>
               </div>
@@ -938,18 +1084,16 @@ export default function PublicMapPage() {
                   <MapContainer
                     center={[-7.2908, 112.779]}
                     zoom={17.8}
-                    minZoom={17.8}
-                    maxZoom={17.8}
-                    zoomSnap={0}
-                    zoomDelta={0}
+                    minZoom={16.8}
+                    maxZoom={19.5}
                     maxBounds={CAMPUS_BOUNDS}
-                    maxBoundsViscosity={1.0}
-                    scrollWheelZoom={false}
-                    touchZoom={false}
-                    doubleClickZoom={false}
+                    maxBoundsViscosity={0.9}
+                    scrollWheelZoom={true}
+                    touchZoom={true}
+                    doubleClickZoom={true}
                     zoomControl={false}
-                    keyboard={false}
-                    boxZoom={false}
+                    keyboard={true}
+                    boxZoom={true}
                     style={{ height: "100%", width: "100%" }}
                   >
                     <MapUpdater selectedBuilding={selectedBuilding} />
@@ -980,7 +1124,7 @@ export default function PublicMapPage() {
                 : "border-black/8 bg-white/92 shadow-xl shadow-slate-200/50"
             }`}
           >
-            <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-black/8'}`}>
+            <div className={`flex items-center ${rightExpanded ? 'justify-between' : 'justify-center'} gap-3 border-b p-4 ${isDark ? 'border-white/10' : 'border-black/8'}`}>
               {rightExpanded ? (
                 <div>
                   <p className={`text-xs uppercase tracking-[0.24em] ${isDark ? 'text-cyan-300/80' : 'text-cyan-600'}`}>

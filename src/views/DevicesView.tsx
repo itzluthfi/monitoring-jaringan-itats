@@ -108,7 +108,7 @@ export function DevicesView() {
       <div className="p-6 md:p-8 animate-in slide-in-from-right-4 duration-300">
          <button onClick={() => setSearchParams({})} className="flex items-center gap-2 text-zinc-400 hover:text-white mb-6 transition-colors">
            <ArrowLeft className="w-5 h-5" />
-           <span>Back to Devices List</span>
+           <span>{t('common.back')}</span>
          </button>
 
          {activeDevice ? (
@@ -144,7 +144,7 @@ export function DevicesView() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <input
               type="text"
-              placeholder="Search routers..."
+              placeholder={t('devices.searchInterface')}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="bg-zinc-900 border border-zinc-700 text-white text-sm rounded-xl pl-9 pr-4 py-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none w-52"
@@ -158,7 +158,7 @@ export function DevicesView() {
             }}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20"
           >
-              <Plus className="w-4 h-4" /> Add Router
+              <Plus className="w-4 h-4" /> {t('devices.addDevice')}
           </button>
         </div>
       </div>
@@ -168,10 +168,10 @@ export function DevicesView() {
           <table className="w-full text-sm text-left whitespace-nowrap">
             <thead className="text-xs text-zinc-400 uppercase bg-zinc-950/50 border-b border-zinc-800">
               <tr>
-                <th className="px-6 py-4 font-semibold">Router Name</th>
+                <th className="px-6 py-4 font-semibold">{t('devices.deviceName')}</th>
                 <th className="px-6 py-4 font-semibold">IP Address</th>
-                <th className="px-6 py-4 font-semibold">Router Status</th>
-                <th className="px-6 py-4 font-semibold">SNMP Metrics</th>
+                <th className="px-6 py-4 font-semibold">{t('devices.status')}</th>
+                <th className="px-6 py-4 font-semibold">{t('devices.snmpCheck')}</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
@@ -199,17 +199,17 @@ export function DevicesView() {
                       </span>
                     </td>
 
-                    {/* COLUMN: Router Online/Offline status (from DB polling) */}
+                    {/* COLUMN: Router Status */}
                     <td className="px-6 py-4">
                       {isRouterOnline ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Online
+                          {t('dashboard.online')}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                          Offline
+                          {t('dashboard.offline')}
                         </span>
                       )}
                     </td>
@@ -221,7 +221,7 @@ export function DevicesView() {
                           <div className="flex flex-col gap-1">
                             <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 w-fit">
                               <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
-                              SNMP Connected
+                              SNMP {t('dashboard.online')}
                             </span>
                             <div className="text-[11px] text-zinc-500 flex items-center gap-3 mt-0.5">
                               <span title="RouterOS Version">v{stat.version}</span>
@@ -232,7 +232,7 @@ export function DevicesView() {
                           <div className="flex flex-col gap-1">
                             <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 w-fit">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                              SNMP Unavailable
+                              SNMP {t('dashboard.offline')}
                             </span>
                             {stat.error && <span className="text-[10px] text-amber-500/70 max-w-[220px] truncate" title={stat.error}>{stat.error}</span>}
                           </div>
@@ -288,7 +288,7 @@ export function DevicesView() {
             <div className="p-6 border-b border-zinc-800 bg-zinc-950/50 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-bold text-white tracking-tight">
-                  {editingDevice ? 'Edit Router Config' : 'Add New Router'}
+                  {editingDevice ? t('devices.editDevice') : t('devices.addDevice')}
                 </h3>
                 <p className="text-xs text-zinc-500 mt-0.5">Configure device connection and identity settings.</p>
               </div>
@@ -309,7 +309,7 @@ export function DevicesView() {
                   
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
-                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">IP / Hostname</label>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">{t('devices.hostIp')}</label>
                       <input required type="text" value={formData.host} onChange={e => setFormData({...formData, host: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="192.168.1.1" />
                     </div>
                     <div>
@@ -324,7 +324,7 @@ export function DevicesView() {
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Password</label>
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">{t('devices.password')}</label>
                     <div className="relative">
                       <input 
                         type={showPassword ? "text" : "password"} 
@@ -434,6 +434,7 @@ export function DevicesView() {
 // Panel detail Interfaces & Queues (Diintegrasikan di satu file)
 // ----------------------------------------------------
 function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'interfaces'|'bandwidth'|'terminal'>('interfaces');
   const [interfaces, setInterfaces] = useState<any[]>([]);
   const [ifaceRates, setIfaceRates] = useState<Record<string, { txRate: number; rxRate: number }>>({});
@@ -711,9 +712,9 @@ function DeviceDetailPanel({ device, status }: { device: any, status: any }) {
                  {device.driver || 'mikrotik'}
                </span>
                {status?.online ? (
-                 <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium text-xs">Online ({status.uptime})</span>
+                 <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium text-xs">{status.uptime}</span>
                ) : (
-                 <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-medium text-xs">Offline</span>
+                 <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-medium text-xs">{t('dashboard.offline')}</span>
                )}
              </div>
            </div>

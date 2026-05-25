@@ -44,8 +44,9 @@ const upload = multer({
 // Create Ticket
 ticketsRouter.post("/", upload.single("photo"), async (req, res) => {
   try {
-    const { reporter_id, reporter_name, reporter_email, category, title, description } = req.body;
-    if (!reporter_id || !reporter_name || !reporter_email || !category || !title || !description) {
+    const { reporter_id, reporter_name, category, title, description, is_public } = req.body;
+    const reporter_email = req.body.reporter_email || "";
+    if (!reporter_id || !reporter_name || !category || !title || !description) {
       return res.status(400).json({ error: "Missing required fields" });
     }
     
@@ -62,10 +63,11 @@ ticketsRouter.post("/", upload.single("photo"), async (req, res) => {
     }
 
     const photo_url = req.file ? `/uploads/${req.file.filename}` : null;
+    const isPublicVal = (is_public === "false" || is_public === 0 || is_public === "0" || is_public === false) ? 0 : 1;
 
     const [result]: any = await db.query(
-      "INSERT INTO tickets (ticket_code, reporter_id, reporter_name, reporter_email, category, title, description, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [ticket_code, reporter_id, reporter_name, reporter_email, category, title, description, photo_url]
+      "INSERT INTO tickets (ticket_code, reporter_id, reporter_name, reporter_email, category, title, description, photo_url, is_public) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [ticket_code, reporter_id, reporter_name, reporter_email, category, title, description, photo_url, isPublicVal]
     );
 
     res.status(201).json({
@@ -83,7 +85,7 @@ ticketsRouter.post("/", upload.single("photo"), async (req, res) => {
 ticketsRouter.get("/public", async (req, res) => {
   try {
     const [rows]: any = await db.query(
-      "SELECT id, ticket_code, category, title, status, created_at FROM tickets ORDER BY created_at DESC"
+      "SELECT id, ticket_code, category, title, status, created_at FROM tickets WHERE is_public = 1 ORDER BY created_at DESC"
     );
     res.json(rows);
   } catch (err: any) {
@@ -136,6 +138,9 @@ ticketsRouter.post("/:code/replies", upload.single("photo"), async (req, res) =>
       [ticket.id, ticket.reporter_name, message || "", photo_url]
     );
 
+    // Mark ticket as unread/updated for admin
+    await db.query("UPDATE tickets SET is_read = 0 WHERE id = ?", [ticket.id]);
+
     res.status(201).json({ success: true, message: "Reply added successfully" });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -143,6 +148,27 @@ ticketsRouter.post("/:code/replies", upload.single("photo"), async (req, res) =>
 });
 
 // ── Admin Routes ─────────────────────────────────────────────────────────────
+
+// Get Count of Unread Tickets for Admin (Protected)
+ticketsRouter.get("/admin/unread-count", requireAuth, async (req, res) => {
+  try {
+    const [[result]]: any = await db.query("SELECT COUNT(*) as unread FROM tickets WHERE is_read = 0");
+    res.json({ unreadCount: result?.unread || 0 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark Ticket as Read (Protected)
+ticketsRouter.put("/admin/:id/read", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query("UPDATE tickets SET is_read = 1 WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Get All Tickets for Admin (Protected)
 ticketsRouter.get("/admin/list", requireAuth, async (req, res) => {
@@ -154,21 +180,44 @@ ticketsRouter.get("/admin/list", requireAuth, async (req, res) => {
   }
 });
 
-// Update Status (Protected)
+// Update Status & Visibility (Protected)
 ticketsRouter.put("/admin/:id/status", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
-    if (!["open", "processing", "resolved", "closed"].includes(status)) {
-      return res.status(400).json({ error: "Invalid status value" });
+    const { status, is_public } = req.body;
+    
+    const updates: string[] = [];
+    const values: any[] = [];
+    
+    if (status !== undefined) {
+      if (!["open", "processing", "resolved", "closed"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status value" });
+      }
+      updates.push("status = ?");
+      values.push(status);
     }
-
-    const [result]: any = await db.query("UPDATE tickets SET status = ? WHERE id = ?", [status, id]);
+    
+    if (is_public !== undefined) {
+      const isPublicVal = (is_public === "false" || is_public === 0 || is_public === "0" || is_public === false) ? 0 : 1;
+      updates.push("is_public = ?");
+      values.push(isPublicVal);
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+    
+    values.push(id);
+    const [result]: any = await db.query(
+      `UPDATE tickets SET ${updates.join(", ")} WHERE id = ?`,
+      values
+    );
+    
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Ticket not found" });
     }
 
-    res.json({ success: true, message: "Ticket status updated successfully" });
+    res.json({ success: true, message: "Ticket updated successfully" });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

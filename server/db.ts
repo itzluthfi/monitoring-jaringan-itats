@@ -191,6 +191,8 @@ export const initializeDB = async () => {
         title VARCHAR(255) NOT NULL,
         description TEXT NOT NULL,
         photo_url VARCHAR(255) NULL,
+        is_public TINYINT DEFAULT 1,
+        is_read TINYINT DEFAULT 0,
         status VARCHAR(20) DEFAULT 'open',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -260,7 +262,8 @@ export const initializeDB = async () => {
       await addColumnIfMissing('admin_users', 'role', "VARCHAR(20) DEFAULT 'admin' AFTER email");
       await addColumnIfMissing('admin_users', 'is_active', "TINYINT DEFAULT 1 AFTER role");
       await addColumnIfMissing('admin_users', 'last_login', "TIMESTAMP NULL AFTER is_active");
-      
+      await addColumnIfMissing('tickets', 'is_public', "TINYINT DEFAULT 1 AFTER photo_url");
+      await addColumnIfMissing('tickets', 'is_read', "TINYINT DEFAULT 0 AFTER is_public");
 
       // Index check
       const [indices]: any = await db.query(

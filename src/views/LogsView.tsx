@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  FileText, 
-  Search, 
-  Filter, 
-  RefreshCw, 
-  HardDrive, 
+import {
+  FileText,
+  Search,
+  Filter,
+  RefreshCw,
+  HardDrive,
   Info,
   AlertTriangle,
   XCircle,
@@ -27,8 +27,10 @@ import {
 import { authFetch } from '../lib/authFetch';
 import { Loader } from '../components/common/Loader';
 import { ViewType } from '../navigation';
+import { useTranslation } from 'react-i18next';
 
 export function LogsView() {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,7 +178,7 @@ export function LogsView() {
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-8 shrink-0">
         <div>
           <h2 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <FileText className="w-8 h-8 text-indigo-400" /> Persistent System Logs
+            <FileText className="w-8 h-8 text-indigo-400" /> {t('logs.title')}
           </h2>
           <p className="text-zinc-400 mt-1">Archive of router activities for long-term retention.</p>
         </div>
@@ -404,7 +406,7 @@ export function LogsView() {
                      onChange={(e) => { setDeviceId(e.target.value); setPage(1); }}
                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                    >
-                     <option value="">All Routers</option>
+                     <option value="">{t('logs.allDevices')}</option>
                      {devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                    </select>
                 </div>
@@ -416,11 +418,11 @@ export function LogsView() {
                      onChange={(e) => { setTopicFilter(e.target.value); setPage(1); }}
                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                    >
-                     <option value="">All Topics</option>
-                     <option value="info">Info</option>
-                     <option value="warning">Warning</option>
-                     <option value="error">Error</option>
-                     <option value="critical">Critical</option>
+                     <option value="">{t('logs.all')}</option>
+                     <option value="info">{t('logs.info')}</option>
+                     <option value="warning">{t('logs.warning')}</option>
+                     <option value="error">{t('logs.error')}</option>
+                     <option value="critical">{t('logs.critical')}</option>
                      <option value="account">Accounts</option>
                      <option value="wireless">Wireless</option>
                    </select>

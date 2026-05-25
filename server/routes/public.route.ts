@@ -152,6 +152,8 @@ publicRouter.get("/campus-map", async (req, res) => {
           const deviceCategoryMap: Record<string, number> = {};
           const userBreakdownMap: Record<string, number> = {};
           const deviceNames: string[] = [];
+          const leaseMap: Record<string, { dynamic: boolean; hostname: string; server?: string }> = {};
+          const seenMacs = new Set<string>();
           let bwRxBps = 0;
           let bwTxBps = 0;
 
@@ -176,7 +178,6 @@ publicRouter.get("/campus-map", async (req, res) => {
 
               // 1. DHCP leases → static vs dynamic mapping (tidak dikirim ke response)
               const leases = await safeWrite(["/ip/dhcp-server/lease/print"]);
-              const leaseMap: Record<string, { dynamic: boolean; hostname: string }> = {};
               if (Array.isArray(leases)) {
                 leases.forEach((lease: any) => {
                   const mac = (lease["mac-address"] || "").toLowerCase();
@@ -184,13 +185,13 @@ publicRouter.get("/campus-map", async (req, res) => {
                   leaseMap[mac] = {
                     dynamic: String(lease["dynamic"]) === "true",
                     hostname: lease["host-name"] || lease["comment"] || "",
+                    server: lease["server"] || "",
                   };
                 });
               }
 
               // 2. ARP → hitung pengguna WiFi vs perangkat kampus
               const arpEntries = await safeWrite(["/ip/arp/print"]);
-              const seenMacs = new Set<string>();
               if (Array.isArray(arpEntries)) {
                 arpEntries.forEach((entry: any) => {
                   const mac = (entry["mac-address"] || "").toLowerCase();
@@ -213,7 +214,7 @@ publicRouter.get("/campus-map", async (req, res) => {
                     deviceCount++;
                     const cat = classifyDevice(lease.hostname);
                     deviceCategoryMap[cat] = (deviceCategoryMap[cat] || 0) + 1;
-                    const dName = lease.hostname || lease.comment || "Perangkat Kampus";
+                    const dName = lease['mac-address'] || "Perangkat Kampus";
                     deviceNames.push(sanitizeName(dName));
                   }
                 });
@@ -269,6 +270,17 @@ publicRouter.get("/campus-map", async (req, res) => {
               else if (i <= 10) deviceNames.push(`Printer ${baseName} ${(i - 8).toString().padStart(2, '0')}`);
               else deviceNames.push(`CCTV ${baseName} ${(i - 10).toString().padStart(2, '0')}`);
             }
+            // Seed mock leases for auto-discovery in simulation mode
+            for (let i = 0; i < userCount; i++) {
+              const mockMac = `aa:bb:cc:dd:ee:${i.toString(16).padStart(2, '0')}`;
+              const srv = i % 3 === 0 ? "Bridge-Client" : i % 3 === 1 ? "vlan-202-D1" : "vlan-203-D2";
+              leaseMap[mockMac] = {
+                dynamic: true,
+                hostname: `mock-user-${i}`,
+                server: srv
+              };
+              seenMacs.add(mockMac);
+            }
             bwRxBps = Math.floor(Math.random() * 80_000_000);
             bwTxBps = Math.floor(Math.random() * 30_000_000);
           }
@@ -291,7 +303,64 @@ publicRouter.get("/campus-map", async (req, res) => {
             areas: floorsMap[key],
           }));
 
-          // Jika tidak ada AP, tampilkan satu entri generik
+          // Jika tidak ada AP terdaftar di DB untuk device ini, 
+          // lakukan auto-discovery SSID/sektor dari DHCP leases yang aktif
+          if (floors.length === 0 && liveStatus === "online") {
+            const serverClientCounts: Record<string, number> = {};
+            
+            // Inisialisasi default agar urutan konsisten
+            const detectedServers = new Set<string>();
+            Object.values(leaseMap).forEach((l: any) => {
+              if (l.server) {
+                let friendlySrv = l.server;
+                const lowerSrv = l.server.toLowerCase();
+                if (lowerSrv.includes("202") || lowerSrv.includes("d1")) {
+                  friendlySrv = "vlan-D1";
+                } else if (lowerSrv.includes("203") || lowerSrv.includes("d2")) {
+                  friendlySrv = "vlan-D2";
+                } else if (lowerSrv.includes("bridge")) {
+                  friendlySrv = "Bridge-Client";
+                }
+                detectedServers.add(friendlySrv);
+              }
+            });
+
+            detectedServers.forEach(srv => {
+              serverClientCounts[srv] = 0;
+            });
+
+            // Hitung pengguna aktif per server/SSID
+            seenMacs.forEach((mac) => {
+              const lease = leaseMap[mac];
+              if (lease && lease.dynamic) {
+                const srv = lease.server || "Jaringan Utama";
+                let friendlySrv = srv;
+                const lowerSrv = srv.toLowerCase();
+                if (lowerSrv.includes("202") || lowerSrv.includes("d1")) {
+                  friendlySrv = "vlan-D1";
+                } else if (lowerSrv.includes("203") || lowerSrv.includes("d2")) {
+                  friendlySrv = "vlan-D2";
+                } else if (lowerSrv.includes("bridge")) {
+                  friendlySrv = "Bridge-Client";
+                }
+                serverClientCounts[friendlySrv] = (serverClientCounts[friendlySrv] || 0) + 1;
+              }
+            });
+
+            const areas = Object.entries(serverClientCounts).map(([serverName, count]) => ({
+              name: sanitizeName(serverName),
+              current: count,
+              online: true,
+            })).sort((a, b) => b.current - a.current);
+
+            if (areas.length > 0) {
+              floors.push({
+                level: "Sektor Pemancar (SSID)",
+                areas: areas,
+              });
+            }
+          }
+
           if (floors.length === 0) {
             floors.push({
               level: "Area Umum",

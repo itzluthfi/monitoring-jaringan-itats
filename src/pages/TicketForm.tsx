@@ -1,12 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wifi, Send, ArrowLeft, Upload, FileText,
   X, CheckCircle2, Clipboard, MapPin, Sun, Moon, Plus, MessageSquare,
+  History, Trash2, ExternalLink, Lock, Globe, ChevronRight, Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePublicTheme } from '../hooks/usePublicTheme';
 import PublicBottomBar from '../components/PublicBottomBar';
+
+const LS_KEY = 'my_tickets';
+
+interface SavedTicket {
+  ticket_code: string;
+  title: string;
+  category: string;
+  is_public: boolean;
+  created_at: string;
+}
+
+function loadMyTickets(): SavedTicket[] {
+  try {
+    return JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveMyTicket(ticket: SavedTicket) {
+  const list = loadMyTickets();
+  const exists = list.find(t => t.ticket_code === ticket.ticket_code);
+  if (!exists) {
+    list.unshift(ticket);
+    localStorage.setItem(LS_KEY, JSON.stringify(list.slice(0, 20)));
+  }
+}
+
+function removeMyTicket(code: string) {
+  const list = loadMyTickets().filter(t => t.ticket_code !== code);
+  localStorage.setItem(LS_KEY, JSON.stringify(list));
+}
 
 export default function TicketForm() {
   const { isDark, toggleTheme } = usePublicTheme();
@@ -17,12 +50,18 @@ export default function TicketForm() {
     reporter_email: '',
     category: 'wifi',
     title: '',
-    description: ''
+    description: '',
+    is_public: true
   });
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ticketCode, setTicketCode] = useState<string | null>(null);
+  const [myTickets, setMyTickets] = useState<SavedTicket[]>([]);
+
+  useEffect(() => {
+    setMyTickets(loadMyTickets());
+  }, []);
 
   const categories = [
     { value: 'wifi', label: 'Wi-Fi / Hotspot' },
@@ -31,6 +70,8 @@ export default function TicketForm() {
     { value: 'portal_login', label: 'Login Portal / Akun' },
     { value: 'other', label: 'Masalah Lainnya' }
   ];
+
+  const getCategoryLabel = (val: string) => categories.find(c => c.value === val)?.label ?? 'Lainnya';
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -60,13 +101,27 @@ export default function TicketForm() {
       data.append('category', formData.category);
       data.append('title', formData.title);
       data.append('description', formData.description);
+      data.append('is_public', formData.is_public ? '1' : '0');
       if (photoFile) data.append('photo', photoFile);
 
       const baseUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${baseUrl}/api/tickets`, { method: 'POST', body: data });
       if (!response.ok) { const t = await response.text(); throw new Error(t || 'Gagal mengirim laporan'); }
       const resData = await response.json();
-      setTicketCode(resData.ticket_code);
+      const code = resData.ticket_code;
+      setTicketCode(code);
+
+      // Save to LocalStorage
+      const newSaved: SavedTicket = {
+        ticket_code: code,
+        title: formData.title,
+        category: formData.category,
+        is_public: formData.is_public,
+        created_at: new Date().toISOString(),
+      };
+      saveMyTicket(newSaved);
+      setMyTickets(loadMyTickets());
+
       toast.success('Laporan berhasil dikirim!');
     } catch (err: any) {
       toast.error(err.message || 'Terjadi kesalahan saat mengirim laporan');
@@ -79,6 +134,12 @@ export default function TicketForm() {
     if (ticketCode) { navigator.clipboard.writeText(ticketCode); toast.success('Kode tiket disalin!'); }
   };
 
+  const handleRemoveTicket = (code: string) => {
+    removeMyTicket(code);
+    setMyTickets(loadMyTickets());
+    toast.success('Tiket dihapus dari riwayat');
+  };
+
   const page   = isDark ? 'bg-[#08111f] text-zinc-100' : 'bg-[#eef2f9] text-slate-900 pub-light';
   const header = isDark ? 'border-white/10 bg-slate-950/80' : 'border-black/8 bg-white/92';
   const card   = isDark ? 'bg-slate-900/70 border-zinc-800' : 'bg-white/90 border-black/8';
@@ -87,6 +148,7 @@ export default function TicketForm() {
     : 'bg-white border-slate-200 focus:border-rose-400 focus:ring-rose-400/10 text-slate-900 placeholder:text-slate-400';
   const label  = isDark ? 'text-zinc-500' : 'text-slate-500';
   const muted  = isDark ? 'text-zinc-400' : 'text-slate-500';
+  const subtle = isDark ? 'text-zinc-500' : 'text-slate-400';
 
   return (
     <div className={`min-h-screen font-sans flex flex-col transition-colors duration-300 ${page}`}>
@@ -100,7 +162,6 @@ export default function TicketForm() {
       {/* ── Header ── */}
       <header className={`sticky top-0 z-[500] border-b backdrop-blur-xl shrink-0 ${header}`}>
         <div className="max-w-3xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
-          {/* Left: back + title */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
@@ -112,7 +173,6 @@ export default function TicketForm() {
               </div>
             </div>
           </div>
-          {/* Right: Status Tiket + theme toggle */}
           <div className="flex items-center gap-2">
             <a
               href="/status-board"
@@ -133,7 +193,8 @@ export default function TicketForm() {
       </header>
 
       {/* ── Content ── */}
-      <main className="flex-1 flex items-start justify-center p-4 md:p-8 pb-28 lg:pb-12">
+      <main className="flex-1 flex flex-col items-center p-4 md:p-8 pb-28 lg:pb-12 gap-6">
+        {/* Form Card */}
         <div className={`w-full max-w-lg rounded-3xl border p-6 md:p-8 shadow-2xl relative ${card}`}>
           <AnimatePresence mode="wait">
             {!ticketCode ? (
@@ -164,13 +225,6 @@ export default function TicketForm() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Email Aktif</label>
-                    <input required type="email" name="reporter_email" value={formData.reporter_email} onChange={handleInputChange}
-                      className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
-                      placeholder="Contoh: ahmad@gmail.com" />
-                  </div>
-
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Kategori Masalah</label>
@@ -187,6 +241,22 @@ export default function TicketForm() {
                         className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
                         placeholder="Contoh: Wifi Gedung F Putus-putus" />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Visibilitas Laporan</label>
+                    <select name="is_public" value={formData.is_public ? "true" : "false"}
+                      onChange={(e) => setFormData({ ...formData, is_public: e.target.value === "true" })}
+                      className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}>
+                      <option value="true">🌐 Publik — muncul di Status Board</option>
+                      <option value="false">🔒 Privat — hanya bisa diakses dengan kode tiket</option>
+                    </select>
+                    <p className={`text-[10px] mt-1.5 flex items-center gap-1 ${subtle}`}>
+                      {formData.is_public
+                        ? <><Globe className="w-3 h-3 text-emerald-500" /> Laporan Anda akan tampil di daftar publik, pesan hanya bisa dikirim oleh pemilik kode tiket.</>
+                        : <><Lock className="w-3 h-3 text-amber-500" /> Laporan ini tersembunyi. Hanya orang yang punya kode tiket yang bisa mengaksesnya.</>
+                      }
+                    </p>
                   </div>
 
                   <div>
@@ -235,25 +305,42 @@ export default function TicketForm() {
                 </div>
                 <h3 className="text-2xl font-bold mb-2">Laporan Terkirim!</h3>
                 <p className={`text-sm max-w-md mx-auto mb-8 ${muted}`}>
-                  Terima kasih. Laporan Anda telah diterima. Gunakan kode tiket berikut untuk memantau status atau berkomunikasi dengan tim teknis.
+                  Terima kasih. Laporan Anda telah diterima dan disimpan di perangkat ini. Gunakan kode tiket berikut untuk mengakses obrolan tiket.
                 </p>
-                <div className={`rounded-2xl p-5 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 border ${isDark ? 'bg-zinc-950/80 border-zinc-800' : 'bg-slate-50 border-slate-200'}`}>
-                  <div className="text-left w-full sm:w-auto">
-                    <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${label}`}>Kode Tiket Anda</p>
-                    <p className="text-2xl font-bold font-mono text-emerald-400 tracking-wider">{ticketCode}</p>
+
+                {/* Ticket Code Card */}
+                <div className={`rounded-2xl p-5 mb-4 border ${isDark ? 'bg-zinc-950/80 border-zinc-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-left w-full sm:w-auto">
+                      <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${label}`}>Kode Tiket Anda</p>
+                      <p className="text-2xl font-bold font-mono text-emerald-400 tracking-wider">{ticketCode}</p>
+                      <p className={`text-[10px] mt-1.5 flex items-center gap-1 ${subtle}`}>
+                        {formData.is_public
+                          ? <><Globe className="w-3 h-3 text-emerald-400" /> Laporan Publik — tetap simpan kode ini untuk kirim pesan</>
+                          : <><Lock className="w-3 h-3 text-amber-400" /> Laporan Privat — kode ini wajib untuk mengakses tiket</>
+                        }
+                      </p>
+                    </div>
+                    <button onClick={copyToClipboard}
+                      className={`w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all border ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                      <Clipboard className="w-4 h-4" /> Salin Kode
+                    </button>
                   </div>
-                  <button onClick={copyToClipboard}
-                    className={`w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all border ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                    <Clipboard className="w-4 h-4" /> Salin Kode
-                  </button>
                 </div>
+
+                <div className={`rounded-2xl p-4 mb-6 border text-left ${isDark ? 'bg-amber-500/5 border-amber-500/20' : 'bg-amber-50 border-amber-200'}`}>
+                  <p className={`text-xs leading-relaxed ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
+                    ⚠️ <strong>Simpan kode ini!</strong> Kode tiket diperlukan untuk mengirim pesan ke admin atau mengakses laporan Anda di lain waktu. Kode tiket juga tersimpan otomatis di <strong>riwayat di bawah halaman ini</strong>.
+                  </p>
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-3">
                   <a href={`/ticket/${ticketCode}`}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/15">
                     <FileText className="w-4 h-4" /> Buka Obrolan Tiket
                   </a>
                   <button
-                    onClick={() => { setTicketCode(null); setPhotoFile(null); setPhotoPreview(null); setFormData({ reporter_id: '', reporter_name: '', reporter_email: '', category: 'wifi', title: '', description: '' }); }}
+                    onClick={() => { setTicketCode(null); setPhotoFile(null); setPhotoPreview(null); setFormData({ reporter_id: '', reporter_name: '', reporter_email: '', category: 'wifi', title: '', description: '', is_public: true }); }}
                     className={`flex-1 py-3.5 rounded-xl font-bold text-sm transition-all border ${isDark ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'}`}>
                     Buat Laporan Baru
                   </button>
@@ -262,6 +349,77 @@ export default function TicketForm() {
             )}
           </AnimatePresence>
         </div>
+
+        {/* ── "Tiket Saya" History Section ── */}
+        {myTickets.length > 0 && (
+          <motion.div
+            className="w-full max-w-lg"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+          >
+            <div className={`rounded-3xl border overflow-hidden shadow-xl ${card}`}>
+              {/* Header */}
+              <div className={`px-6 py-4 border-b flex items-center gap-3 ${isDark ? 'border-zinc-800 bg-zinc-900/30' : 'border-slate-100 bg-slate-50/60'}`}>
+                <div className={`p-2 rounded-xl ${isDark ? 'bg-indigo-500/10 border border-indigo-500/20' : 'bg-indigo-50 border border-indigo-100'}`}>
+                  <History className="w-4 h-4 text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Tiket Saya</h3>
+                  <p className={`text-[10px] ${subtle}`}>Riwayat laporan yang Anda buat di perangkat ini</p>
+                </div>
+              </div>
+
+              {/* Ticket List */}
+              <div className="divide-y divide-zinc-800/40">
+                {myTickets.map((t) => (
+                  <div key={t.ticket_code} className={`px-5 py-4 flex items-center gap-3 group ${isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-slate-50'} transition-all`}>
+                    {/* Icon */}
+                    <div className={`w-8 h-8 shrink-0 rounded-xl flex items-center justify-center border ${t.is_public
+                      ? (isDark ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600')
+                      : (isDark ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')
+                    }`}>
+                      {t.is_public ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold truncate ${isDark ? 'text-zinc-200' : 'text-slate-800'}`}>{t.title}</p>
+                      <div className={`flex items-center gap-2 mt-0.5 text-[10px] ${subtle}`}>
+                        <span className="font-mono">{t.ticket_code}</span>
+                        <span>·</span>
+                        <span>{getCategoryLabel(t.category)}</span>
+                        <span>·</span>
+                        <span className="flex items-center gap-0.5">
+                          <Clock className="w-2.5 h-2.5" />
+                          {new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <a
+                        href={`/ticket/${t.ticket_code}`}
+                        title="Buka Obrolan"
+                        className={`p-1.5 rounded-lg transition-all ${isDark ? 'hover:bg-indigo-500/20 text-zinc-500 hover:text-indigo-400' : 'hover:bg-indigo-50 text-slate-400 hover:text-indigo-600'}`}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        onClick={() => handleRemoveTicket(t.ticket_code)}
+                        title="Hapus dari riwayat"
+                        className={`p-1.5 rounded-lg transition-all ${isDark ? 'hover:bg-rose-500/20 text-zinc-600 hover:text-rose-400' : 'hover:bg-rose-50 text-slate-300 hover:text-rose-500'}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
       </main>
 
       <footer className={`border-t py-5 shrink-0 ${isDark ? 'border-white/5' : 'border-black/5'}`}>

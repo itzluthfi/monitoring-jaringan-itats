@@ -296,7 +296,7 @@ export function SettingsView() {
   if (loading) return <div className="flex-1 flex items-center justify-center p-8"><Loader message="Memuat konfigurasi sistem..." /></div>;
 
   const SaveButton = () => (
-    <button onClick={handleSaveAll} disabled={saving} className="group flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] text-sm">
+    <button onClick={handleSaveAll} disabled={saving} className="group force-white-text flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] text-sm">
       {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4 group-hover:rotate-12 transition-transform" />}
       {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
     </button>
@@ -332,7 +332,7 @@ export function SettingsView() {
             onClick={() => switchTab(id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0
               ${activeTab === id
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                ? 'bg-indigo-600 text-white force-white-text shadow-lg shadow-indigo-600/25'
                 : 'text-zinc-400 hover:text-white hover:bg-white/5'
               }`}
           >
@@ -520,7 +520,7 @@ export function SettingsView() {
                   <User className="w-4 h-4 text-violet-400" /> Admin Users
                   <span className="text-xs font-normal text-zinc-500 ml-1">— {admins.filter(a => a.is_active).length} aktif dari {admins.length}</span>
                 </h3>
-                <button onClick={() => setShowAddAdmin(v => !v)} className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-violet-600/20">
+                <button onClick={() => setShowAddAdmin(v => !v)} className="force-white-text flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-violet-600/20">
                   <UserPlus className="w-3.5 h-3.5" /> Tambah Admin
                 </button>
               </div>

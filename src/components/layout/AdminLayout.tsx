@@ -1,11 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from '../Sidebar';
 import { Bell, Menu, AlertTriangle } from 'lucide-react';
 import { authFetch } from '../../lib/authFetch';
 import { Notification } from '../../types';
 import toast from 'react-hot-toast';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface AdminLayoutProps {
   onLogout: () => void;
@@ -17,9 +18,11 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [globalUnreadCount, setGlobalUnreadCount] = useState(0);
+  const [unreadTicketsCount, setUnreadTicketsCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const lastSeenIdRef = useRef<number>(parseInt(sessionStorage.getItem('last_seen_notification_id') || '-1'));
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const location = useLocation();
   
   let authUser = localStorage.getItem('auth_user');
   if (!authUser || authUser === 'undefined') authUser = 'System Admin';
@@ -107,6 +110,12 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
         if (!Array.isArray(data)) return;
         setNotifications(data);
         if (response.unreadCount !== undefined) setGlobalUnreadCount(response.unreadCount);
+
+        const tRes = await authFetch('/api/tickets/admin/unread-count');
+        if (isMounted && tRes.ok) {
+          const tData = await tRes.json();
+          setUnreadTicketsCount(tData.unreadCount || 0);
+        }
 
         if (data.length > 0) {
           const latestIdInFetch = Math.max(...data.map((n: any) => n.id));
@@ -252,11 +261,13 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
 
     const handleUpdate = () => fetchNotifications();
     window.addEventListener('notifications-changed', handleUpdate);
+    window.addEventListener('tickets-changed', handleUpdate);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
       window.removeEventListener('notifications-changed', handleUpdate);
+      window.removeEventListener('tickets-changed', handleUpdate);
     };
   }, [authToken]);
 
@@ -274,6 +285,7 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
         onLogout={() => setIsLogoutModalOpen(true)}
         authUser={authUser}
         unreadCount={globalUnreadCount}
+        unreadTicketsCount={unreadTicketsCount}
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300 ease-in-out">
@@ -311,7 +323,13 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -8 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className="absolute right-0 mt-2 w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50"
+                >
                   <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950/50">
                     <h3 className="font-semibold text-white">System Notifications</h3>
                     <button 
@@ -373,16 +391,27 @@ export function AdminLayout({ onLogout }: AdminLayoutProps) {
                        View All Logs
                      </button>
                   </div>
-                </div>
+                </motion.div>
               )}
             </div>
           </div>
         </header>
 
-        {/* Dynamic View injected here by React Router */}
+        {/* Dynamic View injected here by React Router — animated transitions */}
         <div className="flex-1 overflow-y-auto relative no-scrollbar">
           <div className="absolute inset-x-0 top-0 h-96 bg-gradient-to-b from-indigo-500/10 to-transparent pointer-events-none" />
-          <Outlet />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              className="h-full"
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
 
