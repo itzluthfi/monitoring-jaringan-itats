@@ -566,6 +566,19 @@ mikrotiksRouter.post('/:id/exec', requireAuth, async (req, res) => {
   }
 });
 
+mikrotiksRouter.get('/:id/credentials', requireAuth, async (req, res) => {
+  try {
+    const [[device]]: any = await db.query("SELECT id, name, user, password, port FROM mikrotik_devices WHERE id = ?", [req.params.id]);
+    if (!device) return res.status(404).json({ error: "Device not found" });
+    res.json({
+      user: device.user,
+      password: device.password || '',
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 mikrotiksRouter.get('/:id/queues', requireAuth, async (req, res) => {
   try {
     const [[device]]: any = await db.query("SELECT * FROM mikrotik_devices WHERE id = ?", [req.params.id]);

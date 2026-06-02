@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Network, Server, Monitor, Router as RouterIcon,
-  Wifi, X, Signal, Users, Clock, Radio,
+  Wifi, X, Signal, Users, Clock, Radio, Eye, EyeOff,
   CheckCircle, XCircle, AlertCircle, Maximize, Minimize, ChevronRight, HelpCircle, ChevronUp, ChevronDown, Filter
 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
@@ -116,10 +116,12 @@ function APCard({ node, selected, onClick }: { node: TopologyNode; selected: boo
 }
 
 // ── Router Column ─────────────────────────────────────────────────────────────
-function RouterColumn({ router, selectedNode, onSelect }: {
+function RouterColumn({ router, selectedNode, onSelect, showIP, onToggleIP }: {
   router: TopologyNode;
   selectedNode: TopologyNode | null;
   onSelect: (n: TopologyNode | null) => void;
+  showIP: boolean;
+  onToggleIP: () => void;
 }) {
   const c = getStatusColors(router.status);
   const Icon = getIcon(router.type);
@@ -146,7 +148,14 @@ function RouterColumn({ router, selectedNode, onSelect }: {
           <Icon className={`w-6 h-6 ${c.text} ${router.status === 'online' ? 'animate-pulse' : ''}`} />
         </div>
         <p className="font-bold text-zinc-100 text-xs text-center truncate w-full px-1">{router.name}</p>
-        {router.host && <p className="text-[9px] font-mono text-zinc-500 mt-0.5">{router.host}</p>}
+        {router.host && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <p className={`text-[9px] font-mono text-zinc-500 ${!showIP ? 'blur-sm select-none' : ''}`}>{router.host}</p>
+            <button onClick={(e) => { e.stopPropagation(); onToggleIP(); }} className="p-0.5 hover:bg-zinc-700/50 rounded transition-colors" title={showIP ? 'Hide IPs' : 'Show IPs'}>
+              {showIP ? <EyeOff className="w-2.5 h-2.5 text-zinc-600" /> : <Eye className="w-2.5 h-2.5 text-zinc-500" />}
+            </button>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-center gap-1 mt-1.5">
           <span className={`text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full ${c.badge}`}>{router.status}</span>
           {router.wifiSource && router.wifiSource !== 'none' && (
@@ -212,10 +221,11 @@ function RouterColumn({ router, selectedNode, onSelect }: {
 }
 
 // ── Detail Panel ─────────────────────────────────────────────────────────────
-function DetailPanel({ node, topology, onClose }: {
+function DetailPanel({ node, topology, onClose, showIP }: {
   node: TopologyNode;
   topology: TopologyNode | null;
   onClose: () => void;
+  showIP: boolean;
 }) {
   const c = getStatusColors(node.status);
   const Icon = getIcon(node.type);
@@ -356,15 +366,15 @@ function DetailPanel({ node, topology, onClose }: {
         {/* Info fields */}
         <div className="space-y-0">
           {[
-            { label: 'IP Address', val: node.host, mono: true },
-            { label: 'SSID', val: node.ssid !== '-' ? node.ssid : null, mono: false },
-            { label: 'Band / Info', val: node.band !== '-' ? node.band : null, mono: false },
-            { label: 'Frequency', val: node.frequency !== '-' ? (node.frequency ? node.frequency + ' MHz' : null) : null, mono: false },
-            { label: 'Channel / Pool', val: node.channel !== '-' ? node.channel : null, mono: false },
+            { label: 'IP Address', val: node.host, mono: true, isIP: true },
+            { label: 'SSID', val: node.ssid !== '-' ? node.ssid : null, mono: false, isIP: false },
+            { label: 'Band / Info', val: node.band !== '-' ? node.band : null, mono: false, isIP: false },
+            { label: 'Frequency', val: node.frequency !== '-' ? (node.frequency ? node.frequency + ' MHz' : null) : null, mono: false, isIP: false },
+            { label: 'Channel / Pool', val: node.channel !== '-' ? node.channel : null, mono: false, isIP: false },
           ].filter(f => f.val).map(f => (
             <div key={f.label} className="flex justify-between text-sm py-2 border-b border-zinc-800/60">
               <span className="text-zinc-400">{f.label}</span>
-              <span className={f.mono ? 'font-mono text-zinc-200' : 'text-zinc-200'}>{f.val}</span>
+              <span className={`${f.mono ? 'font-mono text-zinc-200' : 'text-zinc-200'} ${f.isIP && !showIP ? 'blur-sm select-none' : ''}`}>{f.val}</span>
             </div>
           ))}
           {node.clients !== undefined && (
@@ -493,6 +503,7 @@ export function TopologyView() {
   const [searchMatches, setSearchMatches] = useState<TopologyNode[]>([]);
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showIP, setShowIP] = useState(false);
 
   // Search logic
   const handleSearch = (term: string) => {
@@ -642,9 +653,16 @@ export function TopologyView() {
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
               Network Topology
-              <button 
-                onClick={() => setIsFullscreen(!isFullscreen)} 
-                className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors"
+              <button
+                onClick={() => setShowIP(!showIP)}
+                className={`p-1.5 rounded transition-all ${showIP ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'}`}
+                title={showIP ? 'Hide IP Addresses' : 'Show IP Addresses'}
+              >
+                {showIP ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors"
                 title="Toggle Fullscreen"
               >
                 {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
@@ -825,6 +843,8 @@ export function TopologyView() {
                           router={router}
                           selectedNode={selectedNode}
                           onSelect={node => setSelectedNode(node)}
+                          showIP={showIP}
+                          onToggleIP={() => setShowIP(!showIP)}
                         />
                       </div>
                     ))}
@@ -843,7 +863,7 @@ export function TopologyView() {
 
         {/* Detail Sidebar */}
         {selectedNode && (
-          <DetailPanel node={selectedNode} topology={topology} onClose={() => setSelectedNode(null)} />
+          <DetailPanel node={selectedNode} topology={topology} onClose={() => setSelectedNode(null)} showIP={showIP} />
         )}
 
         {/* ── Legend Overlay ──────────────────────────────────────────────── */}
@@ -902,7 +922,7 @@ export function TopologyView() {
                   </div>
                   <div>
                     <p className="font-bold text-zinc-200 text-sm">{node.name}</p>
-                    <p className="text-xs text-zinc-500 capitalize">{node.type} {node.host ? `• ${node.host}` : ''}</p>
+                    <p className="text-xs text-zinc-500 capitalize">{node.type} {node.host ? `• ` : ''}<span className={node.host && !showIP ? 'blur-sm select-none' : ''}>{node.host || ''}</span></p>
                   </div>
                 </button>
               ))}
