@@ -28,15 +28,7 @@ import StatusBoardPage from "./pages/StatusBoardPage";
 import TicketChatPage from "./pages/TicketChatPage";
 
 export default function Router() {
-  React.useEffect(() => {
-    // Sembunyikan bootscreen overlay secara instan begitu React selesai mount
-    const hideFn = (window as any).hideBootscreen;
-    if (typeof hideFn === 'function') {
-      // Jeda 100ms agar browser sempat merender UI React sebelum overlay memudar
-      const timer = setTimeout(hideFn, 100);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+
 
   const handleLogout = () => {
     localStorage.removeItem("auth_token");

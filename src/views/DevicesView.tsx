@@ -7,6 +7,46 @@ import { encryptId, decryptId } from '../lib/encryption';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix typical Leaflet icon issue in React
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+function MapEventsHandler({ onMapClick }: { onMapClick: (latlng: L.LatLng) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng);
+    },
+  });
+  return null;
+}
+
+function MapCenterController({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    map.invalidateSize();
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [map]);
+
+  useEffect(() => {
+    if (lat && lng) {
+      map.setView([lat, lng], map.getZoom() || 17);
+    }
+  }, [lat, lng, map]);
+  
+  return null;
+}
 
 export function DevicesView() {
   const { t } = useTranslation();
@@ -26,6 +66,65 @@ export function DevicesView() {
   const [savedPassword, setSavedPassword] = useState('');
   const [showIP, setShowIP] = useState(false);
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, any>>({});
+
+  const [mapSearchQuery, setMapSearchQuery] = useState('');
+  const [mapSearchResults, setMapSearchResults] = useState<any[]>([]);
+  const [isSearchingMap, setIsSearchingMap] = useState(false);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-7.2908, 112.779]); // ITATS center
+
+  const handleMapSearch = async () => {
+    if (!mapSearchQuery.trim()) return;
+    setIsSearchingMap(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(mapSearchQuery)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMapSearchResults(data);
+        if (data.length === 0) {
+          toast.error('Lokasi tidak ditemukan');
+        }
+      } else {
+        toast.error('Gagal mencari lokasi');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Terjadi kesalahan koneksi');
+    } finally {
+      setIsSearchingMap(false);
+    }
+  };
+
+  const selectMapSearchResult = (result: any) => {
+    const lat = Number(result.lat);
+    const lng = Number(result.lon);
+    setMapCenter([lat, lng]);
+    setFormData(prev => ({ ...prev, lat: String(lat), lng: String(lng) }));
+    setMapSearchResults([]);
+    setMapSearchQuery('');
+  };
+
+  const handleMapClick = (latlng: L.LatLng) => {
+    const lat = Number(latlng.lat.toFixed(6));
+    const lng = Number(latlng.lng.toFixed(6));
+    setMapCenter([lat, lng]);
+    setFormData(prev => ({ ...prev, lat: String(lat), lng: String(lng) }));
+  };
+
+  const handleLatChange = (val: string) => {
+    setFormData(prev => ({ ...prev, lat: val }));
+    const parsed = Number(val);
+    if (!isNaN(parsed) && parsed !== 0) {
+      setMapCenter(prev => [parsed, prev[1]]);
+    }
+  };
+
+  const handleLngChange = (val: string) => {
+    setFormData(prev => ({ ...prev, lng: val }));
+    const parsed = Number(val);
+    if (!isNaN(parsed) && parsed !== 0) {
+      setMapCenter(prev => [prev[0], parsed]);
+    }
+  };
 
   const detailIdHash = searchParams.get('detail');
   const detailId = detailIdHash ? decryptId(detailIdHash) : null;
@@ -168,6 +267,9 @@ export function DevicesView() {
             onClick={() => { 
               setEditingDevice(null); 
               setFormData({ name: '', host: '', user: '', password: '', port: '8728', lat: '', lng: '', level: '', driver: 'mikrotik', snmp_community: 'public', snmp_port: '161' });
+              setMapCenter([-7.2908, 112.779]);
+              setMapSearchQuery('');
+              setMapSearchResults([]);
               setIsModalOpen(true); 
             }}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20"
@@ -277,10 +379,22 @@ export function DevicesView() {
                             user: device.user,
                             password: '',
                             port: String(device.port),
-                            lat: device.lat||'',
-                            lng: device.lng||'',
-                            level: device.level !== null ? String(device.level) : ''
+                            lat: device.lat || '',
+                            lng: device.lng || '',
+                            level: device.level !== null ? String(device.level) : '',
+                            driver: device.driver || 'mikrotik',
+                            snmp_community: device.snmp_community || 'public',
+                            snmp_port: String(device.snmp_port || '161')
                           });
+                          const dLat = Number(device.lat);
+                          const dLng = Number(device.lng);
+                          if (!isNaN(dLat) && !isNaN(dLng) && dLat !== 0 && dLng !== 0) {
+                            setMapCenter([dLat, dLng]);
+                          } else {
+                            setMapCenter([-7.2908, 112.779]);
+                          }
+                          setMapSearchQuery('');
+                          setMapSearchResults([]);
                           setShowSavedPassword(false);
                           // Ambil password dari server
                           authFetch(`/api/mikrotiks/${device.id}/credentials`)
@@ -333,155 +447,258 @@ export function DevicesView() {
               </button>
             </div>
             <form onSubmit={handleSave} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Connection Settings */}
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
-                    <Key className="w-3.5 h-3.5" /> Connection Settings
-                  </h4>
-                  
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-2">
-                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">{t('devices.hostIp')}</label>
-                      <input required type="text" value={formData.host} onChange={e => setFormData({...formData, host: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="192.168.1.1" />
+              {/* Scrollable Form Body Wrapper to prevent overflow */}
+              <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Connection Settings */}
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                      <Key className="w-3.5 h-3.5" /> Connection Settings
+                    </h4>
+                    
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-2">
+                        <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">{t('devices.hostIp')}</label>
+                        <input required type="text" value={formData.host} onChange={e => setFormData({...formData, host: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="192.168.1.1" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Port</label>
+                        <input required type="text" value={formData.port} onChange={e => setFormData({...formData, port: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="8728" />
+                      </div>
                     </div>
+
                     <div>
-                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Port</label>
-                      <input required type="text" value={formData.port} onChange={e => setFormData({...formData, port: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="8728" />
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Admin User</label>
+                      <input required type="text" value={formData.user} onChange={e => setFormData({...formData, user: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="admin" />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">{t('devices.password')}</label>
+                      <div className="space-y-2">
+                        {/* Saved password (only when editing) */}
+                        {editingDevice && savedPassword && (
+                          <div className="relative">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] text-emerald-400 font-medium">Password tersimpan:</span>
+                              <button
+                                type="button"
+                                onClick={() => setShowSavedPassword(!showSavedPassword)}
+                                className="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 transition-colors"
+                              >
+                                {showSavedPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                {showSavedPassword ? 'Sembunyikan' : 'Tampilkan'}
+                              </button>
+                            </div>
+                            <input
+                              type={showSavedPassword ? "text" : "password"}
+                              value={savedPassword}
+                              readOnly
+                              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-zinc-300 font-mono text-sm outline-none"
+                            />
+                          </div>
+                        )}
+                        {/* New password input */}
+                        <div className="relative">
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            placeholder={editingDevice ? '(Kosongkan untuk menjaga password)' : ''}
+                            required={!editingDevice}
+                            value={formData.password}
+                            onChange={e => setFormData({...formData, password: e.target.value})}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none pr-10 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {editingDevice && (
+                          <p className="text-[10px] text-zinc-600 italic ml-1">
+                            Isi password baru untuk mengganti yang tersimpan
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Driver Options Grouped */}
+                    <div className="pt-2">
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-2 ml-1">Protocol / Adapter</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {['mikrotik', 'snmp'].map((d) => (
+                          <label key={d} className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${formData.driver === d ? 'border-indigo-500/50 bg-indigo-500/10 text-white' : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}>
+                            <input type="radio" name="driver" value={d} checked={formData.driver === d} onChange={() => setFormData({...formData, driver: d})} className="accent-indigo-500" />
+                            <span className="text-xs font-bold uppercase">{d}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {formData.driver === 'snmp' && (
+                        <div className="grid grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-2 duration-200">
+                          <div>
+                            <label className="block text-[10px] font-bold text-zinc-600 uppercase mb-1 ml-1">Community</label>
+                            <input type="text" value={formData.snmp_community} onChange={e => setFormData({...formData, snmp_community: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="public" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-zinc-600 uppercase mb-1 ml-1">UDP Port</label>
+                            <input type="number" value={formData.snmp_port} onChange={e => setFormData({...formData, snmp_port: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="161" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Admin User</label>
-                    <input required type="text" value={formData.user} onChange={e => setFormData({...formData, user: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" placeholder="admin" />
-                  </div>
+                  {/* Identity & Location */}
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-2">
+                      <Monitor className="w-3.5 h-3.5" /> Identity & Location
+                    </h4>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">{t('devices.password')}</label>
-                    <div className="space-y-2">
-                      {/* Saved password (only when editing) */}
-                      {editingDevice && savedPassword && (
-                        <div className="relative">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] text-emerald-400 font-medium">Password tersimpan:</span>
-                            <button
-                              type="button"
-                              onClick={() => setShowSavedPassword(!showSavedPassword)}
-                              className="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 transition-colors"
-                            >
-                              {showSavedPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                              {showSavedPassword ? 'Sembunyikan' : 'Tampilkan'}
-                            </button>
-                          </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Identifier / Name</label>
+                      <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium" placeholder="e.g. Core Switch Gedung F" />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1 flex items-center gap-1.5">
+                        Complexity Level
+                      </label>
+                      <input 
+                        type="number" 
+                        value={formData.level} 
+                        onChange={e => setFormData({...formData, level: e.target.value})} 
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" 
+                        placeholder="1 (Root), 2, 3..." 
+                      />
+                      <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">Lower value appears higher in topology tree.</p>
+                    </div>
+
+                    {/* Geocoding Search Bar */}
+                    <div className="relative">
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Cari Lokasi di Map</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                           <input
-                            type={showSavedPassword ? "text" : "password"}
-                            value={savedPassword}
-                            readOnly
-                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-zinc-300 font-mono text-sm outline-none"
+                            type="text"
+                            placeholder="Cari lokasi, misal: Kampus ITATS"
+                            value={mapSearchQuery}
+                            onChange={e => setMapSearchQuery(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleMapSearch();
+                              }
+                            }}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-4 py-2 text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                           />
                         </div>
-                      )}
-                      {/* New password input */}
-                      <div className="relative">
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          placeholder={editingDevice ? '(Kosongkan untuk menjaga password)' : ''}
-                          required={!editingDevice}
-                          value={formData.password}
-                          onChange={e => setFormData({...formData, password: e.target.value})}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none pr-10 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                        />
                         <button
                           type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                          onClick={handleMapSearch}
+                          disabled={isSearchingMap}
+                          className="px-4 bg-zinc-850 hover:bg-zinc-750 text-white rounded-xl text-xs font-bold transition-all border border-zinc-700 disabled:opacity-50"
                         >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          {isSearchingMap ? 'Mencari...' : 'Cari'}
                         </button>
                       </div>
-                      {editingDevice && (
-                        <p className="text-[10px] text-zinc-600 italic ml-1">
-                          Isi password baru untuk mengganti yang tersimpan
-                        </p>
+
+                      {/* Search Results Dropdown */}
+                      {mapSearchResults.length > 0 && (
+                        <div className="absolute z-[110] left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl divide-y divide-zinc-900">
+                          {mapSearchResults.map((result, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => selectMapSearchResult(result)}
+                              className="w-full text-left px-4 py-2 hover:bg-zinc-900 text-xs text-zinc-300 transition-colors truncate block"
+                              title={result.display_name}
+                            >
+                              {result.display_name}
+                            </button>
+                          ))}
+                        </div>
                       )}
                     </div>
-                  </div>
 
-                  {/* Driver Options Grouped */}
-                  <div className="pt-2">
-                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-2 ml-1">Protocol / Adapter</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {['mikrotik', 'snmp'].map((d) => (
-                        <label key={d} className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${formData.driver === d ? 'border-indigo-500/50 bg-indigo-500/10 text-white' : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}>
-                          <input type="radio" name="driver" value={d} checked={formData.driver === d} onChange={() => setFormData({...formData, driver: d})} className="accent-indigo-500" />
-                          <span className="text-xs font-bold uppercase">{d}</span>
-                        </label>
-                      ))}
-                    </div>
-                    {formData.driver === 'snmp' && (
-                      <div className="grid grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-2 duration-200">
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-600 uppercase mb-1 ml-1">Community</label>
-                          <input type="text" value={formData.snmp_community} onChange={e => setFormData({...formData, snmp_community: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="public" />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-600 uppercase mb-1 ml-1">UDP Port</label>
-                          <input type="number" value={formData.snmp_port} onChange={e => setFormData({...formData, snmp_port: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-sm outline-none" placeholder="161" />
-                        </div>
+                    {/* Leaflet Map Preview */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">
+                        Preview Lokasi (Klik map untuk memindahkan pin)
+                      </label>
+                      <div className="h-[180px] w-full rounded-xl border border-zinc-800 overflow-hidden z-0 relative">
+                        <MapContainer
+                          center={mapCenter}
+                          zoom={17}
+                          maxZoom={19}
+                          style={{ height: '100%', width: '100%', background: '#18181b' }}
+                          zoomControl={true}
+                          doubleClickZoom={false}
+                        >
+                          <TileLayer
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            attribution='&copy; OpenStreetMap'
+                            maxNativeZoom={19}
+                            maxZoom={19}
+                          />
+                          <MapEventsHandler onMapClick={handleMapClick} />
+                          <MapCenterController lat={mapCenter[0]} lng={mapCenter[1]} />
+                          {!isNaN(Number(formData.lat)) && !isNaN(Number(formData.lng)) && formData.lat !== '' && formData.lng !== '' ? (
+                            <Marker
+                              draggable={true}
+                              eventHandlers={{
+                                dragend(e) {
+                                  const marker = e.target;
+                                  if (marker != null) {
+                                    const latlng = marker.getLatLng();
+                                    const lat = Number(latlng.lat.toFixed(6));
+                                    const lng = Number(latlng.lng.toFixed(6));
+                                    setMapCenter([lat, lng]);
+                                    setFormData(prev => ({ ...prev, lat: String(lat), lng: String(lng) }));
+                                  }
+                                }
+                              }}
+                              position={[Number(formData.lat), Number(formData.lng)]}
+                            />
+                          ) : null}
+                        </MapContainer>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Identity & Location */}
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-2">
-                    <Monitor className="w-3.5 h-3.5" /> Identity & Location
-                  </h4>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Identifier / Name</label>
-                    <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium" placeholder="e.g. Core Switch Gedung F" />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1 flex items-center gap-1.5">
-                      Complexity Level
-                    </label>
-                    <input 
-                      type="number" 
-                      value={formData.level} 
-                      onChange={e => setFormData({...formData, level: e.target.value})} 
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" 
-                      placeholder="1 (Root), 2, 3..." 
-                    />
-                    <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">Lower value appears higher in topology tree.</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 pt-2">
-                    <div>
-                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Latitude</label>
-                      <input type="text" value={formData.lat} onChange={e => setFormData({...formData, lat: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono" placeholder="-7.29..." />
                     </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Longitude</label>
-                      <input type="text" value={formData.lng} onChange={e => setFormData({...formData, lng: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono" placeholder="112.77..." />
-                    </div>
-                  </div>
 
-                  <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-4 mt-4">
-                    <p className="text-[10px] text-emerald-400/80 leading-relaxed italic">
-                      Gis coordinates are used to plot the device on the global live map. Standard decimal format recommended.
-                    </p>
+                    {/* Manual Coordinates Grid */}
+                    <div className="grid grid-cols-2 gap-4 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Latitude</label>
+                        <input
+                          type="text"
+                          value={formData.lat}
+                          onChange={e => handleLatChange(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
+                          placeholder="-7.29..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-zinc-500 uppercase mb-1.5 ml-1">Longitude</label>
+                        <input
+                          type="text"
+                          value={formData.lng}
+                          onChange={e => handleLngChange(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
+                          placeholder="112.77..."
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-8 border-t border-zinc-800 mt-8">
+              {/* Form Actions Footer */}
+              <div className="flex gap-4 pt-6 border-t border-zinc-800 mt-6">
                 <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95">
                    {editingDevice ? 'Update Device' : 'Register Device'}
                 </button>
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-[0.5] bg-zinc-800 hover:bg-zinc-700 text-zinc-400 py-3 rounded-2xl font-bold transition-all active:scale-95">
+                <button type="button" onClick={() => { setIsModalOpen(false); setShowSavedPassword(false); setSavedPassword(''); }} className="flex-[0.5] bg-zinc-800 hover:bg-zinc-700 text-zinc-400 py-3 rounded-2xl font-bold transition-all active:scale-95">
                   Cancel
                 </button>
               </div>

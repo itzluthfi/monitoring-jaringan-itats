@@ -28,6 +28,7 @@ import {
   LayoutList,
 } from "lucide-react";
 import "leaflet/dist/leaflet.css";
+import { usePublicTheme } from "../hooks/usePublicTheme";
 
 // Fix Leaflet marker icon for React environment
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -132,15 +133,7 @@ export default function PublicMapPage() {
   const [showInfoTooltip, setShowInfoTooltip] = useState(false);
   const [showUserDetail, setShowUserDetail] = useState(false);
   const [showDeviceDetail, setShowDeviceDetail] = useState(false);
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    try { return localStorage.getItem('pub-theme') !== 'light'; } catch { return true; }
-  });
-
-  const toggleTheme = () => setIsDark((v) => {
-    const next = !v;
-    try { localStorage.setItem('pub-theme', next ? 'dark' : 'light'); } catch {}
-    return next;
-  });
+  const { isDark, toggleTheme } = usePublicTheme();
 
   const [activeBuilding, setActiveBuilding] = useState<PublicMapBuilding | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -403,41 +396,57 @@ export default function PublicMapPage() {
               />
             </div>
             <div className="space-y-3">
-              {filteredBuildings.map((building) => (
-                <button
-                  key={building.id}
-                  onClick={() => {
-                    setSelectedId(building.id);
-                    setLeftExpanded(false);
-                  }}
-                  className={`w-full rounded-3xl border p-3 text-left transition duration-200 select-none active:scale-[0.98] ${
-                    selectedId === building.id 
-                      ? isDark ? "border-cyan-400/40 bg-cyan-500/10" : "border-cyan-400 bg-cyan-50" 
-                      : isDark ? "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90" : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-100/70"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
-                        {sanitizePublicName(building.name)}
-                      </p>
-                      <p className="text-xs text-zinc-500 mt-1">
-                        {building.density ?? 0}% • {building.user_count ?? 0}{" "}
-                        pengguna
-                      </p>
+              {loading ? (
+                [...Array(4)].map((_, i) => (
+                  <div key={i} className={`w-full rounded-3xl border p-4 animate-pulse ${isDark ? 'border-white/5 bg-zinc-900/40' : 'border-slate-100 bg-slate-50/50'}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="space-y-2 flex-1">
+                        <div className={`h-4 rounded w-3/4 ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`}></div>
+                        <div className={`h-3 rounded w-1/2 ${isDark ? 'bg-zinc-850' : 'bg-slate-100'}`}></div>
+                      </div>
+                      <div className={`h-6 w-16 rounded-full ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`}></div>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${getDensityBadgeClass(building)}`}
-                    >
-                      {getDensityStatusText(building)}
-                    </span>
                   </div>
-                </button>
-              ))}
-              {filteredBuildings.length === 0 && (
-                <p className="text-sm text-zinc-500">
-                  Tidak ditemukan area pada pencarian.
-                </p>
+                ))
+              ) : (
+                <>
+                  {filteredBuildings.map((building) => (
+                    <button
+                      key={building.id}
+                      onClick={() => {
+                        setSelectedId(building.id);
+                        setLeftExpanded(false);
+                      }}
+                      className={`w-full rounded-3xl border p-3 text-left transition duration-200 select-none active:scale-[0.98] ${
+                        selectedId === building.id 
+                          ? isDark ? "border-cyan-400/40 bg-cyan-500/10" : "border-cyan-400 bg-cyan-50" 
+                          : isDark ? "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90" : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-100/70"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                            {sanitizePublicName(building.name)}
+                          </p>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            {building.density ?? 0}% • {building.user_count ?? 0}{" "}
+                            pengguna
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${getDensityBadgeClass(building)}`}
+                        >
+                          {getDensityStatusText(building)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                  {filteredBuildings.length === 0 && (
+                    <p className="text-sm text-zinc-500">
+                      Tidak ditemukan area pada pencarian.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -966,38 +975,54 @@ export default function PublicMapPage() {
                   </div>
                 </div>
                 <div className="space-y-3 max-h-[44vh] overflow-y-auto pr-1 custom-scrollbar">
-                  {filteredBuildings.map((building) => (
-                    <button
-                      key={building.id}
-                      onClick={() => setSelectedId(building.id)}
-                      className={`w-full rounded-3xl border p-3 text-left transition duration-200 ${
-                        selectedId === building.id 
-                          ? isDark ? "border-cyan-400/40 bg-cyan-500/10" : "border-cyan-400 bg-cyan-50" 
-                          : isDark ? "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90" : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-100/70"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
-                            {sanitizePublicName(building.name)}
-                          </p>
-                          <p className="text-xs text-zinc-500 mt-1">
-                            {building.density ?? 0}% •{" "}
-                            {building.user_count ?? 0} pengguna
-                          </p>
+                  {loading ? (
+                    [...Array(5)].map((_, i) => (
+                      <div key={i} className={`w-full rounded-3xl border p-4 animate-pulse ${isDark ? 'border-white/5 bg-zinc-900/40' : 'border-slate-100 bg-slate-50/50'}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="space-y-2 flex-1">
+                            <div className={`h-4 rounded w-3/4 ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`}></div>
+                            <div className={`h-3 rounded w-1/2 ${isDark ? 'bg-zinc-850' : 'bg-slate-100'}`}></div>
+                          </div>
+                          <div className={`h-6 w-16 rounded-full ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`}></div>
                         </div>
-                        <span
-                          className={`rounded-full px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${getDensityBadgeClass(building)}`}
-                        >
-                          {getDensityStatusText(building)}
-                        </span>
                       </div>
-                    </button>
-                  ))}
-                  {filteredBuildings.length === 0 && (
-                    <p className="text-sm text-zinc-500">
-                      Tidak ditemukan area pada pencarian.
-                    </p>
+                    ))
+                  ) : (
+                    <>
+                      {filteredBuildings.map((building) => (
+                        <button
+                          key={building.id}
+                          onClick={() => setSelectedId(building.id)}
+                          className={`w-full rounded-3xl border p-3 text-left transition duration-200 ${
+                            selectedId === building.id 
+                              ? isDark ? "border-cyan-400/40 bg-cyan-500/10" : "border-cyan-400 bg-cyan-50" 
+                              : isDark ? "border-white/5 bg-zinc-900/70 hover:border-white/10 hover:bg-zinc-900/90" : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-100/70"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                                {sanitizePublicName(building.name)}
+                              </p>
+                              <p className="text-xs text-zinc-500 mt-1">
+                                {building.density ?? 0}% •{" "}
+                                {building.user_count ?? 0} pengguna
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${getDensityBadgeClass(building)}`}
+                            >
+                              {getDensityStatusText(building)}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                      {filteredBuildings.length === 0 && (
+                        <p className="text-sm text-zinc-500">
+                          Tidak ditemukan area pada pencarian.
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -1011,61 +1036,75 @@ export default function PublicMapPage() {
                 : 'border-black/8 bg-white/92 shadow-xl shadow-slate-200/50'
             }`}>
               <div className="grid gap-3 md:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
-                      Online
-                    </p>
-                    <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  </div>
-                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-600'}`}>
-                    {status?.network?.online ?? "-"}
-                  </p>
-                </div>
-                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
-                      Offline
-                    </p>
-                    <AlertTriangle className={`w-4 h-4 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
-                  </div>
-                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-amber-300' : 'text-amber-600'}`}>
-                    {status?.network?.offline ?? "-"}
-                  </p>
-                </div>
-                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
-                      Gedung
-                    </p>
-                    <Building2 className={`w-4 h-4 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
-                  </div>
-                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-cyan-300' : 'text-cyan-600'}`}>
-                    {buildings.length}
-                  </p>
-                </div>
-                <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'} line-clamp-1`}>
-                      Pengguna
-                    </p>
-                    <Users className={`w-4 h-4 ${isDark ? 'text-cyan-400' : 'text-cyan-650'}`} />
-                  </div>
-                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-cyan-300' : 'text-cyan-600'}`}>
-                    {totalCurrent}
-                  </p>
-                </div>
-                <div className={`rounded-3xl border p-3 md:p-5 col-span-2 sm:col-span-1 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
-                      Perangkat
-                    </p>
-                    <Cpu className={`w-4 h-4 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
-                  </div>
-                  <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>
-                    {totalDevices}
-                  </p>
-                </div>
+                {loading ? (
+                  [...Array(5)].map((_, i) => (
+                    <div key={i} className={`rounded-3xl border p-3 md:p-5 animate-pulse ${isDark ? 'border-zinc-800 bg-slate-900/40' : 'border-slate-200 bg-slate-50/50'} ${i === 4 ? 'col-span-2 sm:col-span-1' : ''}`}>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className={`h-3 rounded w-16 ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`}></div>
+                        <div className={`w-4 h-4 rounded-full ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`}></div>
+                      </div>
+                      <div className={`h-7 rounded w-10 mt-3 ${isDark ? 'bg-zinc-800' : 'bg-slate-250'}`}></div>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                          Online
+                        </p>
+                        <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                      </div>
+                      <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-600'}`}>
+                        {status?.network?.online ?? "-"}
+                      </p>
+                    </div>
+                    <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                          Offline
+                        </p>
+                        <AlertTriangle className={`w-4 h-4 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
+                      </div>
+                      <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-amber-300' : 'text-amber-600'}`}>
+                        {status?.network?.offline ?? "-"}
+                      </p>
+                    </div>
+                    <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                          Gedung
+                        </p>
+                        <Building2 className={`w-4 h-4 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+                      </div>
+                      <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-cyan-300' : 'text-cyan-600'}`}>
+                        {buildings.length}
+                      </p>
+                    </div>
+                    <div className={`rounded-3xl border p-3 md:p-5 transition-colors ${isDark ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-cyan-200 bg-cyan-50/40'}`}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-cyan-400' : 'text-cyan-750'} line-clamp-1`}>
+                          Pengguna
+                        </p>
+                        <Users className={`w-4 h-4 ${isDark ? 'text-cyan-400' : 'text-cyan-650'}`} />
+                      </div>
+                      <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-cyan-300' : 'text-cyan-600'}`}>
+                        {totalCurrent}
+                      </p>
+                    </div>
+                    <div className={`rounded-3xl border p-3 md:p-5 col-span-2 sm:col-span-1 transition-colors ${isDark ? 'border-zinc-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/50'}`}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-slate-500'} line-clamp-1`}>
+                          Perangkat
+                        </p>
+                        <Cpu className={`w-4 h-4 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`} />
+                      </div>
+                      <p className={`mt-2 md:mt-3 text-2xl md:text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                        {totalDevices}
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1077,8 +1116,9 @@ export default function PublicMapPage() {
             }`} style={{isolation: 'isolate'}}>
               <div className="h-[42vh] min-h-[280px] md:h-[58vh] md:min-h-[440px] relative">
                 {mapLoading ? (
-                  <div className={`flex h-full items-center justify-center text-zinc-400 ${isDark ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                    Memuat peta...
+                  <div className={`w-full h-full flex flex-col items-center justify-center animate-pulse ${isDark ? 'bg-slate-950/80' : 'bg-slate-50'}`}>
+                    <div className={`w-10 h-10 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4`}></div>
+                    <p className={`text-xs font-semibold uppercase tracking-wider ${isDark ? 'text-zinc-500' : 'text-slate-400'}`}>Memuat Peta...</p>
                   </div>
                 ) : (
                   <MapContainer
@@ -1100,6 +1140,8 @@ export default function PublicMapPage() {
                     <TileLayer
                       attribution="&copy; OpenStreetMap contributors"
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      maxNativeZoom={19}
+                      maxZoom={20}
                     />
                     {filteredBuildings.map((building) => (
                       <Marker

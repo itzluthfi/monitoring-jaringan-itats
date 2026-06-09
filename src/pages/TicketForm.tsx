@@ -193,9 +193,9 @@ export default function TicketForm() {
       </header>
 
       {/* ── Content ── */}
-      <main className="flex-1 flex flex-col items-center p-4 md:p-8 pb-28 lg:pb-12 gap-6">
+      <main className="flex-1 flex flex-col items-center p-4 md:p-8 pb-28 lg:pb-12 gap-6 w-full">
         {/* Form Card */}
-        <div className={`w-full max-w-lg rounded-3xl border p-6 md:p-8 shadow-2xl relative ${card}`}>
+        <div className={`w-full max-w-lg lg:max-w-5xl rounded-3xl border p-6 md:p-8 shadow-2xl relative ${card}`}>
           <AnimatePresence mode="wait">
             {!ticketCode ? (
               <motion.div key="form" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
@@ -209,93 +209,101 @@ export default function TicketForm() {
                   </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>NPM / NIP</label>
-                      <input required type="text" name="reporter_id" value={formData.reporter_id} onChange={handleInputChange}
-                        className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
-                        placeholder="Contoh: 06.2023.1.90123" />
-                    </div>
-                    <div>
-                      <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Nama Lengkap</label>
-                      <input required type="text" name="reporter_name" value={formData.reporter_name} onChange={handleInputChange}
-                        className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
-                        placeholder="Contoh: Ahmad Fauzi" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Kategori Masalah</label>
-                      <select name="category" value={formData.category} onChange={handleInputChange}
-                        className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}>
-                        {categories.map(cat => (
-                          <option key={cat.value} value={cat.value}>{cat.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Judul Laporan</label>
-                      <input required type="text" name="title" value={formData.title} onChange={handleInputChange}
-                        className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
-                        placeholder="Contoh: Wifi Gedung F Putus-putus" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Visibilitas Laporan</label>
-                    <select name="is_public" value={formData.is_public ? "true" : "false"}
-                      onChange={(e) => setFormData({ ...formData, is_public: e.target.value === "true" })}
-                      className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}>
-                      <option value="true">🌐 Publik — muncul di Status Board</option>
-                      <option value="false">🔒 Privat — hanya bisa diakses dengan kode tiket</option>
-                    </select>
-                    <p className={`text-[10px] mt-1.5 flex items-center gap-1 ${subtle}`}>
-                      {formData.is_public
-                        ? <><Globe className="w-3 h-3 text-emerald-500" /> Laporan Anda akan tampil di daftar publik, pesan hanya bisa dikirim oleh pemilik kode tiket.</>
-                        : <><Lock className="w-3 h-3 text-amber-500" /> Laporan ini tersembunyi. Hanya orang yang punya kode tiket yang bisa mengaksesnya.</>
-                      }
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Detail Kerusakan / Kronologi</label>
-                    <textarea required name="description" rows={4} value={formData.description} onChange={handleInputChange}
-                      className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all resize-none ${input}`}
-                      placeholder="Jelaskan secara rinci lokasi, nama Wi-Fi, dan detail kendala Anda..." />
-                  </div>
-
-                  {/* Photo Upload */}
-                  <div>
-                    <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Foto Pendukung (Opsional)</label>
-                    {!photoPreview ? (
-                      <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-6 cursor-pointer transition-all ${isDark ? 'border-zinc-800 hover:border-rose-500/50 bg-zinc-950/30 hover:bg-rose-500/[0.02]' : 'border-slate-200 hover:border-rose-400/50 bg-slate-50 hover:bg-rose-50/30'}`}>
-                        <Upload className={`w-8 h-8 mb-2 ${isDark ? 'text-zinc-600' : 'text-slate-400'}`} />
-                        <span className={`text-xs font-medium ${muted}`}>Klik untuk upload gambar</span>
-                        <span className={`text-[10px] mt-1 ${isDark ? 'text-zinc-600' : 'text-slate-400'}`}>PNG, JPG, JPEG (Max 5MB)</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-                      </label>
-                    ) : (
-                      <div className={`relative rounded-2xl overflow-hidden border p-2 flex items-center justify-between ${isDark ? 'border-zinc-800 bg-zinc-950/50' : 'border-slate-200 bg-white'}`}>
-                        <div className="flex items-center gap-3">
-                          <img src={photoPreview} alt="Preview" className="w-12 h-12 object-cover rounded-lg border border-white/10" />
-                          <div className="min-w-0">
-                            <p className={`text-xs font-medium truncate ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{photoFile?.name}</p>
-                            <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-slate-400'}`}>{(photoFile!.size / (1024 * 1024)).toFixed(2)} MB</p>
-                          </div>
-                        </div>
-                        <button type="button" onClick={removePhoto} className="p-1.5 bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white rounded-lg transition-all">
-                          <X className="w-4 h-4" />
-                        </button>
+                <form onSubmit={handleSubmit} className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-8">
+                  {/* Left Column */}
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>NPM / NIP</label>
+                        <input required type="text" name="reporter_id" value={formData.reporter_id} onChange={handleInputChange}
+                          className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
+                          placeholder="Contoh: 06.2023.1.90123" />
                       </div>
-                    )}
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Nama Lengkap</label>
+                        <input required type="text" name="reporter_name" value={formData.reporter_name} onChange={handleInputChange}
+                          className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
+                          placeholder="Contoh: Ahmad Fauzi" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Kategori Masalah</label>
+                        <select name="category" value={formData.category} onChange={handleInputChange}
+                          className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}>
+                          {categories.map(cat => (
+                            <option key={cat.value} value={cat.value}>{cat.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Judul Laporan</label>
+                        <input required type="text" name="title" value={formData.title} onChange={handleInputChange}
+                          className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}
+                          placeholder="Contoh: Wifi Gedung F Putus-putus" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Visibilitas Laporan</label>
+                      <select name="is_public" value={formData.is_public ? "true" : "false"}
+                        onChange={(e) => setFormData({ ...formData, is_public: e.target.value === "true" })}
+                        className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all ${input}`}>
+                        <option value="true">🌐 Publik — muncul di Status Board</option>
+                        <option value="false">🔒 Privat — hanya bisa diakses dengan kode tiket</option>
+                      </select>
+                      <p className={`text-[10px] mt-1.5 flex items-center gap-1 ${subtle}`}>
+                        {formData.is_public
+                          ? <><Globe className="w-3 h-3 text-emerald-500" /> Laporan Anda akan tampil di daftar publik, pesan hanya bisa dikirim oleh pemilik kode tiket.</>
+                          : <><Lock className="w-3 h-3 text-amber-500" /> Laporan ini tersembunyi. Hanya orang yang punya kode tiket yang bisa mengaksesnya.</>
+                        }
+                      </p>
+                    </div>
                   </div>
 
-                  <button type="submit" disabled={loading}
-                    className="w-full bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-800 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-rose-600/15">
-                    {loading ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <><Send className="w-4 h-4" /> Kirim Laporan Pengaduan</>}
-                  </button>
+                  {/* Right Column */}
+                  <div className="space-y-4 flex flex-col justify-between">
+                    <div className="space-y-4">
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Detail Kerusakan / Kronologi</label>
+                        <textarea required name="description" rows={4} value={formData.description} onChange={handleInputChange}
+                          className={`w-full border focus:ring-2 rounded-xl px-4 py-3 text-sm outline-none transition-all resize-none ${input}`}
+                          placeholder="Jelaskan secara rinci lokasi, nama Wi-Fi, dan detail kendala Anda..." />
+                      </div>
+
+                      {/* Photo Upload */}
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-1.5 ${label}`}>Foto Pendukung (Opsional)</label>
+                        {!photoPreview ? (
+                          <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-6 cursor-pointer transition-all ${isDark ? 'border-zinc-800 hover:border-rose-500/50 bg-zinc-950/30 hover:bg-rose-500/[0.02]' : 'border-slate-200 hover:border-rose-400/50 bg-slate-50 hover:bg-rose-50/30'}`}>
+                            <Upload className={`w-8 h-8 mb-2 ${isDark ? 'text-zinc-600' : 'text-slate-400'}`} />
+                            <span className={`text-xs font-medium ${muted}`}>Klik untuk upload gambar</span>
+                            <span className={`text-[10px] mt-1 ${isDark ? 'text-zinc-600' : 'text-slate-400'}`}>PNG, JPG, JPEG (Max 5MB)</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                          </label>
+                        ) : (
+                          <div className={`relative rounded-2xl overflow-hidden border p-2 flex items-center justify-between ${isDark ? 'border-zinc-800 bg-zinc-950/50' : 'border-slate-200 bg-white'}`}>
+                            <div className="flex items-center gap-3">
+                              <img src={photoPreview} alt="Preview" className="w-12 h-12 object-cover rounded-lg border border-white/10" />
+                              <div className="min-w-0">
+                                <p className={`text-xs font-medium truncate ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>{photoFile?.name}</p>
+                                <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-slate-400'}`}>{(photoFile!.size / (1024 * 1024)).toFixed(2)} MB</p>
+                              </div>
+                            </div>
+                            <button type="button" onClick={removePhoto} className="p-1.5 bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white rounded-lg transition-all">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button type="submit" disabled={loading}
+                      className="w-full bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-800 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-rose-600/15 lg:mt-6">
+                      {loading ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <><Send className="w-4 h-4" /> Kirim Laporan Pengaduan</>}
+                    </button>
+                  </div>
                 </form>
               </motion.div>
             ) : (
@@ -353,7 +361,7 @@ export default function TicketForm() {
         {/* ── "Tiket Saya" History Section ── */}
         {myTickets.length > 0 && (
           <motion.div
-            className="w-full max-w-lg"
+            className="w-full max-w-lg lg:max-w-5xl"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}

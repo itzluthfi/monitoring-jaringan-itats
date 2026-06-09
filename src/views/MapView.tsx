@@ -213,6 +213,7 @@ export function MapView() {
         <MapContainer 
           center={[-7.2908, 112.779]} 
           zoom={18} 
+          maxZoom={22}
           zoomControl={false}
           style={{ height: '100%', width: '100%' }}
           className="z-0"
@@ -225,6 +226,8 @@ export function MapView() {
               ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"}
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            maxNativeZoom={19}
+            maxZoom={22}
           />
           
           {buildings.map(building => {
