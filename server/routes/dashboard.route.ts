@@ -246,12 +246,16 @@ dashboardRouter.get("/current-status", async (req, res) => {
       for (const device of devices) {
         try {
           const client = createMikrotikClient(device);
-          const api = await client.connect();
-          const results = await api.menu("/ip/arp").print();
-          const clientsOnDevice = results.length;
+          let clientsOnDevice = 0;
+          try {
+            const api = await client.connect();
+            const results = await api.menu("/ip/arp").print();
+            clientsOnDevice = results.length;
+          } finally {
+            await client.close().catch(() => {});
+          }
           count += clientsOnDevice;
           breakdown.push({ routerName: device.name, count: clientsOnDevice });
-          await client.close();
         } catch (err) {
           // ignore offline devices
           breakdown.push({ routerName: device.name, count: 0 });
@@ -691,8 +695,9 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
       let wifiSource: 'CAPsMAN' | 'WLAN' | 'none' = 'none';
 
       if (routerOnline) {
+        let client;
         try {
-          const client = createMikrotikClient(device);
+          client = createMikrotikClient(device);
           const api = await client.connect();
 
           // ── Safe API call wrapper ──────────────────────────────────────────
@@ -1247,8 +1252,6 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
             }
           }
 
-          await client.close();
-
         } catch (err: any) {
           const errMsg = String(err?.message || err || "Unknown Connection Error");
           console.error(`[Topology] AP fetch error for ${device.name}:`, errMsg);
@@ -1258,6 +1261,8 @@ dashboardRouter.get("/topology/dynamic", async (req, res) => {
             "UPDATE mikrotik_aps SET status = 'offline', last_error = ?, last_seen = NOW() WHERE mikrotik_id = ?",
             [errMsg, device.id]
           );
+        } finally {
+          if (client) await client.close().catch(() => {});
         }
       }
       
@@ -1511,7 +1516,6 @@ dashboardRouter.get('/topology/clients/all', async (req, res) => {
           const duration = Date.now() - start;
           console.log(`[Client-Scan] ✅ ${device.name} finished in ${duration}ms (${allClients.length - clientsBefore} clients)`);
 
-          await client.close();
         } catch (err: any) {
           const errorMsg = err.message || String(err);
           console.error(`[Client-Scan] ❌ ${device.name} failed after ${Date.now() - start}ms:`, errorMsg);
@@ -1522,6 +1526,8 @@ dashboardRouter.get('/topology/clients/all', async (req, res) => {
             hint: 'Pastikan API MikroTik aktif.'
           });
 
+        } finally {
+          await client.close().catch(() => {});
         }
       }));
     }

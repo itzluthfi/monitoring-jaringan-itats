@@ -71,9 +71,25 @@ export function SettingsView() {
   const [newSoundUrl, setNewSoundUrl]   = useState('');
 
   // ── Integration state ──
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramToken, setTelegramToken]   = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
   const [revealToken, setRevealToken]       = useState(false);
+  const [waEnabled, setWaEnabled]           = useState(false);
+  const [sources, setSources]               = useState<any[]>([]);
+  const [targets, setTargets]               = useState<any[]>([]);
+  const [loadingSources, setLoadingSources] = useState(false);
+  const [loadingTargets, setLoadingTargets] = useState(false);
+  const [showAddSource, setShowAddSource]   = useState(false);
+  const [newSourceName, setNewSourceName]   = useState('');
+  const [showAddTarget, setShowAddTarget]   = useState(false);
+  const [newTarget, setNewTarget]           = useState({ name: '', phone_number: '' });
+  const [editingTarget, setEditingTarget]   = useState<any | null>(null);
+  const [activeQrSource, setActiveQrSource] = useState<any | null>(null);
+  const [testSourceId, setTestSourceId]     = useState('');
+  const [testTargetNum, setTestTargetNum]   = useState('');
+  const [testMsgContent, setTestMsgContent] = useState('');
+  const [testingWa, setTestingWa]           = useState(false);
   const [manualApiUrl, setManualApiUrl]     = useState(localStorage.getItem('API_SERVER_URL') || '');
 
   // ── Security: Change my password ──
@@ -97,23 +113,266 @@ export function SettingsView() {
   const [fpSent, setFpSent]           = useState(false);
   const [fpLoading, setFpLoading]     = useState(false);
 
+  const fetchSources = useCallback(async () => {
+    setLoadingSources(true);
+    try {
+      const res = await authFetch('/api/whatsapp/sources');
+      if (res.ok) {
+        const data = await res.json();
+        setSources(data);
+        if (activeQrSource) {
+          const updated = data.find((s: any) => s.id === activeQrSource.id);
+          if (updated) {
+            setActiveQrSource(updated);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Gagal memuat nomor sumber:', err);
+    } finally {
+      setLoadingSources(false);
+    }
+  }, [activeQrSource]);
+
+  const fetchTargets = useCallback(async () => {
+    setLoadingTargets(true);
+    try {
+      const res = await authFetch('/api/whatsapp/targets');
+      if (res.ok) {
+        setTargets(await res.json());
+      }
+    } catch (err) {
+      console.error('Gagal memuat nomor tujuan:', err);
+    } finally {
+      setLoadingTargets(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (waEnabled && activeTab === 'integrations') {
+      fetchSources();
+      fetchTargets();
+      const interval = setInterval(fetchSources, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [waEnabled, activeTab, fetchSources, fetchTargets]);
+
+  const handleAddSource = async () => {
+    if (!newSourceName.trim()) return;
+    try {
+      const res = await authFetch('/api/whatsapp/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newSourceName })
+      });
+      if (res.ok) {
+        toast.success('Sumber WhatsApp berhasil ditambahkan!');
+        setNewSourceName('');
+        setShowAddSource(false);
+        fetchSources();
+      } else {
+        const d = await res.json();
+        toast.error(d.error || 'Gagal menambahkan sumber.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleDeleteSource = async (id: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus sumber WhatsApp ini beserta seluruh sesinya?')) return;
+    try {
+      const res = await authFetch(`/api/whatsapp/sources/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Sumber WhatsApp dihapus.');
+        if (activeQrSource && activeQrSource.id === id) {
+          setActiveQrSource(null);
+        }
+        fetchSources();
+      } else {
+        toast.error('Gagal menghapus sumber.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleToggleSource = async (id: number) => {
+    try {
+      const res = await authFetch(`/api/whatsapp/sources/${id}/toggle`, { method: 'PUT' });
+      if (res.ok) {
+        toast.success('Status sumber diperbarui.');
+        fetchSources();
+      } else {
+        toast.error('Gagal memperbarui status sumber.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleConnectSource = async (id: number) => {
+    try {
+      const res = await authFetch(`/api/whatsapp/sources/${id}/connect`, { method: 'POST' });
+      if (res.ok) {
+        toast.success('Menghubungkan ke WhatsApp Web...');
+        fetchSources();
+        const src = sources.find(s => s.id === id);
+        if (src) setActiveQrSource(src);
+      } else {
+        toast.error('Gagal memproses koneksi.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleDisconnectSource = async (id: number) => {
+    try {
+      const res = await authFetch(`/api/whatsapp/sources/${id}/disconnect`, { method: 'POST' });
+      if (res.ok) {
+        toast.success('WhatsApp diputuskan.');
+        if (activeQrSource && activeQrSource.id === id) {
+          setActiveQrSource(null);
+        }
+        fetchSources();
+      } else {
+        toast.error('Gagal memutuskan WhatsApp.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleAddTarget = async () => {
+    if (!newTarget.name.trim() || !newTarget.phone_number.trim()) {
+      toast.error('Nama dan Nomor Telepon diperlukan.');
+      return;
+    }
+    try {
+      const res = await authFetch('/api/whatsapp/targets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTarget)
+      });
+      if (res.ok) {
+        toast.success('Nomor tujuan berhasil ditambahkan!');
+        setNewTarget({ name: '', phone_number: '' });
+        setShowAddTarget(false);
+        fetchTargets();
+      } else {
+        const d = await res.json();
+        toast.error(d.error || 'Gagal menambahkan nomor tujuan.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleUpdateTarget = async () => {
+    if (!editingTarget.name.trim() || !editingTarget.phone_number.trim()) {
+      toast.error('Nama dan Nomor Telepon diperlukan.');
+      return;
+    }
+    try {
+      const res = await authFetch(`/api/whatsapp/targets/${editingTarget.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingTarget)
+      });
+      if (res.ok) {
+        toast.success('Nomor tujuan berhasil diperbarui!');
+        setEditingTarget(null);
+        fetchTargets();
+      } else {
+        const d = await res.json();
+        toast.error(d.error || 'Gagal memperbarui nomor tujuan.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleToggleTarget = async (id: number) => {
+    try {
+      const res = await authFetch(`/api/whatsapp/targets/${id}/toggle`, { method: 'PUT' });
+      if (res.ok) {
+        toast.success('Status penerima diperbarui.');
+        fetchTargets();
+      } else {
+        toast.error('Gagal memperbarui status penerima.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi server.');
+    }
+  };
+
+  const handleDeleteTarget = async (id: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus nomor tujuan ini?')) return;
+    try {
+      const res = await authFetch(`/api/whatsapp/targets/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Nomor tujuan berhasil dihapus.');
+        fetchTargets();
+      } else {
+        toast.error('Gagal menghapus nomor tujuan.');
+      }
+    } catch {
+      toast.error('Gagal menghapus nomor tujuan.');
+    }
+  };
+
+  const handleTestWhatsAppCustom = async () => {
+    if (!testTargetNum.trim()) {
+      toast.error('Tentukan nomor tujuan uji coba.');
+      return;
+    }
+    setTestingWa(true);
+    try {
+      const res = await authFetch('/api/whatsapp/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceId: testSourceId || undefined,
+          target: testTargetNum,
+          message: testMsgContent || undefined
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success('Pesan uji coba berhasil dikirim!');
+        setTestMsgContent('');
+      } else {
+        toast.error(data.error || 'Gagal mengirim pesan uji coba.');
+      }
+    } catch {
+      toast.error('Gagal menghubungi backend.');
+    } finally {
+      setTestingWa(false);
+    }
+  };
+
   // ─── Fetch all settings ─────────────────────────────────────────────────────
   const fetchSettings = useCallback(async () => {
     try {
-      const [aiRes, retRes, soundRes, teleTokenRes, teleChatRes, simRes] = await Promise.all([
+      const [aiRes, retRes, soundRes, teleEnabledRes, teleTokenRes, teleChatRes, waEnabledRes, simRes] = await Promise.all([
         authFetch('/api/settings/ai_analysis_enabled'),
         authFetch('/api/settings/log_retention_days'),
         authFetch('/api/settings/notification_sounds'),
+        authFetch('/api/settings/telegram_enabled'),
         authFetch('/api/settings/telegram_bot_token'),
         authFetch('/api/settings/telegram_chat_id'),
+        authFetch('/api/settings/wa_enabled'),
         authFetch('/api/settings/simulation_mode'),
       ]);
-      if (aiRes.ok)        setAiEnabled((await aiRes.json()).value !== 'false');
-      if (retRes.ok)       setRetentionDays(parseInt((await retRes.json()).value || '30'));
-      if (soundRes.ok)     { const d = await soundRes.json(); if (d.value) setNotificationSounds(JSON.parse(d.value)); }
-      if (teleTokenRes.ok) setTelegramToken((await teleTokenRes.json()).value || '');
-      if (teleChatRes.ok)  setTelegramChatId((await teleChatRes.json()).value || '');
-      if (simRes.ok)       setSimulationMode((await simRes.json()).value === 'true');
+      if (aiRes.ok)          setAiEnabled((await aiRes.json()).value !== 'false');
+      if (retRes.ok)         setRetentionDays(parseInt((await retRes.json()).value || '30'));
+      if (soundRes.ok)       { const d = await soundRes.json(); if (d.value) setNotificationSounds(JSON.parse(d.value)); }
+      if (teleEnabledRes.ok) setTelegramEnabled((await teleEnabledRes.json()).value === 'true');
+      if (teleTokenRes.ok)   setTelegramToken((await teleTokenRes.json()).value || '');
+      if (teleChatRes.ok)    setTelegramChatId((await teleChatRes.json()).value || '');
+      if (waEnabledRes.ok)   setWaEnabled((await waEnabledRes.json()).value === 'true');
+      if (simRes.ok)         setSimulationMode((await simRes.json()).value === 'true');
       const lp = localStorage.getItem('notification_polling');
       if (lp) setPollingRate(parseInt(lp));
     } catch (err) {
@@ -139,6 +398,26 @@ export function SettingsView() {
   const switchTab = (id: TabId) => {
     setActiveTab(id);
     localStorage.setItem('settings_tab', id);
+  };
+
+  const handleToggleWhatsApp = async (checked: boolean) => {
+    setWaEnabled(checked);
+    try {
+      await authFetch('/api/settings/wa_enabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: String(checked) })
+      });
+      if (checked) {
+        toast.success('Integrasi WhatsApp diaktifkan secara global.');
+        fetchSources();
+        fetchTargets();
+      } else {
+        toast.success('Integrasi WhatsApp dinonaktifkan secara global.');
+      }
+    } catch (err) {
+      toast.error('Gagal mengubah status WhatsApp');
+    }
   };
 
   // ─── Save general/monitoring/audio/integrations ─────────────────────────────
@@ -168,8 +447,10 @@ export function SettingsView() {
         post('ai_analysis_enabled', String(aiEnabled)),
         post('log_retention_days', String(retentionDays)),
         post('notification_sounds', JSON.stringify(notificationSounds)),
+        post('telegram_enabled', String(telegramEnabled)),
         post('telegram_bot_token', telegramToken),
         post('telegram_chat_id', telegramChatId),
+        post('wa_enabled', String(waEnabled)),
         post('simulation_mode', String(simulationMode)),
         post('app_language', appLanguage),
       ]);
@@ -472,26 +753,459 @@ export function SettingsView() {
         {/* ── TAB: INTEGRATIONS ─────────────────────────────────────────────────── */}
         {activeTab === 'integrations' && (
           <div className="bg-zinc-900/50 border border-white/10 rounded-3xl p-6 shadow-xl space-y-6">
-            <SectionTitle icon={MessageSquare} color="text-sky-400" label="Telegram Integration" />
-            <p className="text-xs text-zinc-400">Terima peringatan status jaringan langsung ke bot Telegram Anda saat perangkat offline/online.</p>
-
-            <div>
-              <label className="text-xs font-bold text-zinc-500 block mb-1.5">Bot Token</label>
-              <div className="relative">
-                <input type={revealToken ? 'text' : 'password'} value={telegramToken} onChange={e => setTelegramToken(e.target.value)} placeholder="1234567:ABC-DEF..." className={`${inputCls} pr-12`} />
-                <button type="button" onClick={() => setRevealToken(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors">
-                  {revealToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+            
+            {/* Telegram Integration header & toggle */}
+            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+              <div className="space-y-1 pr-4">
+                <SectionTitle icon={MessageSquare} color="text-sky-400" label="Telegram Integration" />
+                <p className="text-xs text-zinc-400">Terima peringatan status jaringan langsung ke bot Telegram Anda saat perangkat offline/online.</p>
               </div>
-              {telegramToken && !revealToken && <p className="text-[10px] text-zinc-600 mt-1">Tersimpan: {maskSecret(telegramToken)}</p>}
-            </div>
-            <div>
-              <label className="text-xs font-bold text-zinc-500 block mb-1.5">Chat ID Tujuan</label>
-              <input type="text" value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} placeholder="ID Pribadi / Grup (mis. -1001234567)" className={inputCls} />
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  checked={telegramEnabled} 
+                  onChange={e => setTelegramEnabled(e.target.checked)} 
+                  className="sr-only peer" 
+                />
+                <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+              </label>
             </div>
 
-            <SectionTitle icon={Smartphone} color="text-emerald-400" label="Mobile Connectivity (Capacitor)" />
-            <p className="text-xs text-zinc-400">Gunakan ini jika Anda membuka dashboard dari Aplikasi Android/iOS agar bisa terhubung ke server laptop Anda.</p>
+            {telegramEnabled && (
+              <div className="space-y-4 pl-2 border-l border-sky-500/20">
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 block mb-1.5">Bot Token</label>
+                  <div className="relative">
+                    <input type={revealToken ? 'text' : 'password'} value={telegramToken} onChange={e => setTelegramToken(e.target.value)} placeholder="1234567:ABC-DEF..." className={`${inputCls} pr-12`} />
+                    <button type="button" onClick={() => setRevealToken(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors">
+                      {revealToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {telegramToken && !revealToken && <p className="text-[10px] text-zinc-650 mt-1">Tersimpan: {maskSecret(telegramToken)}</p>}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 block mb-1.5">Chat ID Tujuan</label>
+                  <input type="text" value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} placeholder="ID Pribadi / Grup (mis. -1001234567)" className={inputCls} />
+                </div>
+              </div>
+            )}
+
+            {/* WhatsApp Integration header & toggle */}
+            <div className="flex items-center justify-between border-b border-white/5 pb-4 pt-4">
+              <div className="space-y-1 pr-4">
+                <SectionTitle icon={MessageSquare} color="text-emerald-400" label="WhatsApp Integration" />
+                <p className="text-xs text-zinc-400">Kirim notifikasi peringatan status jaringan langsung ke nomor WhatsApp Anda saat terjadi gangguan.</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  checked={waEnabled} 
+                  onChange={e => handleToggleWhatsApp(e.target.checked)} 
+                  className="sr-only peer" 
+                />
+                <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+              </label>
+            </div>
+
+            {waEnabled && (
+              <div className="space-y-8 pl-2 border-l border-emerald-500/20">
+                
+                {/* ========================================== */}
+                {/* NOMOR SUMBER (SENDER GATEWAYS)             */}
+                {/* ========================================== */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Nomor Sumber (Gateways)</h4>
+                      <p className="text-xs text-zinc-400">Hubungkan satu atau beberapa nomor WhatsApp pengirim untuk siaran alert.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddSource(v => !v)}
+                      className="force-white-text flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg active:scale-95"
+                    >
+                      Tambah Pengirim
+                    </button>
+                  </div>
+
+                  {showAddSource && (
+                    <div className="bg-black/30 p-4 rounded-2xl border border-white/5 flex flex-col sm:flex-row gap-3">
+                      <input
+                        type="text"
+                        value={newSourceName}
+                        onChange={e => setNewSourceName(e.target.value)}
+                        placeholder="Nama sumber (misal: Gateway Utama)"
+                        className={`${inputCls} flex-1`}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAddSource}
+                          className="px-4 py-2 bg-emerald-600 text-white-fixed font-semibold rounded-xl text-xs hover:bg-emerald-500 transition-all active:scale-95"
+                        >
+                          Simpan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddSource(false)}
+                          className="px-4 py-2 bg-zinc-800 text-zinc-400 font-semibold rounded-xl text-xs hover:bg-zinc-700 transition-all"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sources Table */}
+                  <div className="overflow-x-auto border border-white/5 rounded-2xl bg-zinc-950/40">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-white/5 bg-zinc-950/60 text-zinc-400 font-bold uppercase tracking-wider">
+                          <th className="p-3">Nama</th>
+                          <th className="p-3">Nomor Terhubung</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3 text-center">Aktif</th>
+                          <th className="p-3 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-zinc-300">
+                        {loadingSources && sources.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-zinc-500 animate-pulse">Memuat nomor sumber...</td>
+                          </tr>
+                        ) : sources.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-zinc-500">Belum ada nomor sumber pengirim.</td>
+                          </tr>
+                        ) : (
+                          sources.map((src: any) => {
+                            const isConnected = src.status === 'connected';
+                            const isQr = src.status === 'qrcode';
+                            const isConnecting = src.status === 'connecting';
+                            
+                            return (
+                              <tr key={src.id} className="hover:bg-white/5 transition-colors">
+                                <td className="p-3 font-semibold text-white">{src.name}</td>
+                                <td className="p-3 font-mono">{src.phone_number || '-'}</td>
+                                <td className="p-3">
+                                  <div className="flex items-center gap-1.5">
+                                    {isConnected && (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                        <span className="text-emerald-400 font-semibold">Terhubung</span>
+                                      </>
+                                    )}
+                                    {isQr && (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                        <span className="text-amber-400 font-semibold">Butuh Scan QR</span>
+                                      </>
+                                    )}
+                                    {isConnecting && (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+                                        <span className="text-sky-400 font-semibold">Menghubungkan...</span>
+                                      </>
+                                    )}
+                                    {src.status === 'disconnected' && (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-zinc-650" />
+                                        <span className="text-zinc-500">Terputus</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={src.is_active === 1}
+                                      onChange={() => handleToggleSource(src.id)}
+                                      className="sr-only peer"
+                                    />
+                                    <div className="w-7 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                                  </label>
+                                </td>
+                                <td className="p-3 text-right space-x-2">
+                                  {isConnected ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDisconnectSource(src.id)}
+                                      className="px-2 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 active:scale-95 transition-all"
+                                    >
+                                      Putuskan
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={src.is_active === 0}
+                                      onClick={() => handleConnectSource(src.id)}
+                                      className="px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/10 active:scale-95 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                    >
+                                      {isQr ? 'Scan QR' : 'Hubungkan'}
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSource(src.id)}
+                                    className="px-2 py-1 rounded bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-rose-400 transition-colors"
+                                  >
+                                    Hapus
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* QR Code Scan Modal */}
+                  {activeQrSource && (activeQrSource.status === 'qrcode' || activeQrSource.status === 'connecting') && (
+                    <div className="bg-zinc-800/80 border border-amber-500/30 rounded-2xl p-5 space-y-4 max-w-md mx-auto text-center shadow-lg relative overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setActiveQrSource(null)}
+                        className="absolute top-3 right-3 text-zinc-400 hover:text-white transition-colors"
+                      >
+                        ✕
+                      </button>
+                      <h5 className="text-xs font-bold text-amber-400 uppercase tracking-wider">Scan QR Code — {activeQrSource.name}</h5>
+                      
+                      {activeQrSource.status === 'qrcode' && activeQrSource.qr ? (
+                        <div className="flex flex-col items-center justify-center p-4 bg-white rounded-2xl w-fit mx-auto shadow-md">
+                          <img src={activeQrSource.qr} alt="WhatsApp QR Code" className="w-44 h-44 select-none" />
+                          <span className="text-[10px] text-zinc-500 font-medium mt-2 max-w-[200px]">
+                            Buka WhatsApp → Perangkat Tertaut → Tautkan Perangkat lalu scan QR.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="py-10 flex flex-col items-center justify-center text-zinc-500">
+                          <div className="w-8 h-8 rounded-full border-2 border-t-sky-500 border-zinc-700 animate-spin mb-3" />
+                          <p className="text-xs">Menghubungkan Baileys & memuat QR code...</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* ========================================== */}
+                {/* NOMOR TUJUAN (RECIPIENTS)                  */}
+                {/* ========================================== */}
+                <div className="space-y-4 pt-4 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Nomor Tujuan (Penerima)</h4>
+                      <p className="text-xs text-zinc-400">Pengiriman alert jaringan akan disiarkan ke seluruh nomor tujuan aktif di bawah ini.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTarget(null);
+                        setShowAddTarget(v => !v);
+                      }}
+                      className="force-white-text flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg active:scale-95"
+                    >
+                      Tambah Penerima
+                    </button>
+                  </div>
+
+                  {showAddTarget && (
+                    <div className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-3">
+                      <h5 className="text-xs font-bold text-zinc-400 uppercase">Tambah Penerima Baru</h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={newTarget.name}
+                          onChange={e => setNewTarget(p => ({ ...p, name: e.target.value }))}
+                          placeholder="Nama Penerima (misal: Admin IT)"
+                          className={inputCls}
+                        />
+                        <input
+                          type="text"
+                          value={newTarget.phone_number}
+                          onChange={e => setNewTarget(p => ({ ...p, phone_number: e.target.value }))}
+                          placeholder="Nomor HP WhatsApp (misal: 6285607846889)"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAddTarget}
+                          className="px-4 py-2 bg-emerald-600 text-white-fixed font-semibold rounded-xl text-xs hover:bg-emerald-500 transition-all active:scale-95"
+                        >
+                          Simpan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddTarget(false)}
+                          className="px-4 py-2 bg-zinc-800 text-zinc-400 font-semibold rounded-xl text-xs hover:bg-zinc-700 transition-all"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {editingTarget && (
+                    <div className="bg-zinc-800/40 p-4 rounded-2xl border border-white/5 space-y-3">
+                      <h5 className="text-xs font-bold text-amber-400 uppercase">Edit Penerima</h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={editingTarget.name}
+                          onChange={e => setEditingTarget(p => ({ ...p, name: e.target.value }))}
+                          placeholder="Nama Penerima"
+                          className={inputCls}
+                        />
+                        <input
+                          type="text"
+                          value={editingTarget.phone_number}
+                          onChange={e => setEditingTarget(p => ({ ...p, phone_number: e.target.value }))}
+                          placeholder="Nomor HP"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleUpdateTarget}
+                          className="px-4 py-2 bg-emerald-600 text-white-fixed font-semibold rounded-xl text-xs hover:bg-emerald-500 transition-all active:scale-95"
+                        >
+                          Perbarui
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingTarget(null)}
+                          className="px-4 py-2 bg-zinc-800 text-zinc-400 font-semibold rounded-xl text-xs hover:bg-zinc-700 transition-all"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Targets Table */}
+                  <div className="overflow-x-auto border border-white/5 rounded-2xl bg-zinc-950/40">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-white/5 bg-zinc-950/60 text-zinc-400 font-bold uppercase tracking-wider">
+                          <th className="p-3">Nama</th>
+                          <th className="p-3">Nomor Tujuan</th>
+                          <th className="p-3 text-center">Aktif</th>
+                          <th className="p-3 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-zinc-300">
+                        {loadingTargets && targets.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-zinc-500 animate-pulse">Memuat nomor tujuan...</td>
+                          </tr>
+                        ) : targets.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-zinc-500">Belum ada nomor tujuan penerima.</td>
+                          </tr>
+                        ) : (
+                          targets.map((tgt: any) => (
+                            <tr key={tgt.id} className="hover:bg-white/5 transition-colors">
+                              <td className="p-3 font-semibold text-white">{tgt.name}</td>
+                              <td className="p-3 font-mono">{tgt.phone_number}</td>
+                              <td className="p-3 text-center">
+                                <label className="relative inline-flex items-center cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={tgt.is_active === 1}
+                                    onChange={() => handleToggleTarget(tgt.id)}
+                                    className="sr-only peer"
+                                  />
+                                  <div className="w-7 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                                </label>
+                              </td>
+                              <td className="p-3 text-right space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowAddTarget(false);
+                                    setEditingTarget(tgt);
+                                  }}
+                                  className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteTarget(tgt.id)}
+                                  className="px-2 py-1 rounded bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-rose-400 transition-colors"
+                                >
+                                  Hapus
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* ========================================== */}
+                {/* UJI COBA PESAN (TEST PIPELINE)             */}
+                {/* ========================================== */}
+                <div className="bg-zinc-800/30 border border-white/5 rounded-2xl p-4 space-y-4 pt-4">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Kirim Pesan Uji Coba (Kustom)</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-500 block mb-1">Pilih Pengirim (Source)</label>
+                      <select
+                        value={testSourceId}
+                        onChange={e => setTestSourceId(e.target.value)}
+                        className={`${inputCls} appearance-none`}
+                      >
+                        <option value="">-- Gunakan Sumber Pertama Terhubung --</option>
+                        {sources.filter(s => s.status === 'connected').map(s => (
+                          <option key={s.id} value={s.session_id}>{s.name} ({s.phone_number})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-500 block mb-1">Nomor Penerima Uji Coba</label>
+                      <input
+                        type="text"
+                        value={testTargetNum}
+                        onChange={e => setTestTargetNum(e.target.value)}
+                        placeholder="Masukkan nomor HP (misal: 6285607846889)"
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 block mb-1">Isi Pesan Uji Coba</label>
+                    <textarea
+                      value={testMsgContent}
+                      onChange={e => setTestMsgContent(e.target.value)}
+                      placeholder="Masukkan isi pesan tes kustom (opsional)"
+                      className={`${inputCls} min-h-[60px]`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={testingWa}
+                    onClick={handleTestWhatsAppCustom}
+                    className="flex items-center justify-center gap-2 w-full text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 py-2.5 rounded-xl border border-emerald-500/20 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {testingWa ? 'Mengirim...' : 'Kirim Pesan Uji Coba'}
+                  </button>
+                </div>
+
+              </div>
+            )}
+
+            <div className="border-t border-white/5 pt-4">
+              <SectionTitle icon={Smartphone} color="text-indigo-400" label="Mobile Connectivity (Capacitor)" />
+              <p className="text-xs text-zinc-400 mt-1">Gunakan ini jika Anda membuka dashboard dari Aplikasi Android/iOS agar bisa terhubung ke server laptop Anda.</p>
+            </div>
             
             <div>
               <label className="text-xs font-bold text-zinc-500 block mb-1.5">Backend Server URL</label>
@@ -502,7 +1216,7 @@ export function SettingsView() {
                 placeholder="http://172.18.xxx.xxx:3000" 
                 className={inputCls} 
               />
-              <p className="text-[10px] text-zinc-600 mt-2 italic">
+              <p className="text-[10px] text-zinc-650 mt-2 italic">
                 * Kosongkan jika hanya menggunakan Browser di laptop yang sama (otomatis pakai localhost).
               </p>
             </div>

@@ -212,6 +212,28 @@ export const initializeDB = async () => {
       )
     `);
 
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_sources (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(50) DEFAULT NULL,
+        status VARCHAR(50) DEFAULT 'disconnected',
+        session_id VARCHAR(100) UNIQUE NOT NULL,
+        is_active TINYINT DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_targets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(50) NOT NULL,
+        is_active TINYINT DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
 
     const [users]: any = await db.query('SELECT * FROM admin_users WHERE username = ?', ['admin']);
     if (users.length === 0) {
@@ -232,6 +254,7 @@ export const initializeDB = async () => {
     await seedSetting('log_retention_days', '30');
     await seedSetting('ai_analysis_enabled', 'true');
     await seedSetting('notification_polling', '10');
+    await seedSetting('wa_target', '6285607846889');
 
     // Migration for existing tables: Add columns to mikrotik_aps if missing (Cross-Version Compatible)
     try {

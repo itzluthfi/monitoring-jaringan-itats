@@ -22,6 +22,8 @@ import { adminsRouter } from './routes/admins.route';
 import { ticketsRouter } from './routes/tickets.route';
 import { requireAuth } from './middleware/auth';
 import { publicSecurityMiddleware } from './middleware/publicSecurity';
+import { whatsappRouter } from './routes/whatsapp.route';
+import { initAllActiveWhatsAppSessions, sendWhatsAppAlertBroadcast } from './lib/whatsapp';
 
 dotenv.config();
 
@@ -81,6 +83,7 @@ app.use("/api/logs", requireAuth, logsRouter);
 app.use("/api/settings", requireAuth, settingsRouter);
 app.use("/api/adapters", requireAuth, adapterRouter);
 app.use("/api/controllers", requireAuth, controllersRouter);
+app.use("/api/whatsapp", requireAuth, whatsappRouter);
 // Admins CRUD + forgot/reset password (forgot-password tidak butuh auth)
 app.use("/api/admins", adminsRouter);
 
@@ -102,10 +105,14 @@ setInterval(async () => {
     for (const device of devices) {
       try {
         const client = createMikrotikClient(device);
-        const api = await client.connect();
-        const results = await api.menu("/ip/arp").print();
-        const count = results.length;
-        await client.close();
+        let count = 0;
+        try {
+          const api = await client.connect();
+          const results = await api.menu("/ip/arp").print();
+          count = results.length;
+        } finally {
+          await client.close().catch(() => {});
+        }
         
         await db.query("INSERT INTO wifi_density (timestamp, client_count, ap_name) VALUES (?, ?, ?)", [now, count, device.name]);
         console.log(`[Stats-API] Saved density for ${device.name}: ${count} clients`);
@@ -118,31 +125,230 @@ setInterval(async () => {
   }
 }, 15 * 60 * 1000);
 
-// Device status tracking for notification generation
+
+
+// Tracking status and fail counts
 const deviceLastStatus: Record<number, string> = {};
 const deviceFailCount: Record<number, number> = {};
 const apLastStatus: Record<number, string> = {};
 const apFailCount: Record<number, number> = {};
 
+// Tracking offline start time for downtime duration
+const deviceOfflineTime: Record<number, number> = {};
+const apOfflineTime: Record<number, number> = {};
+
+// Tracking status transition times for flapping detection (timestamp array)
+const deviceAlertHistory: Record<number, number[]> = {};
+const deviceAlertLocked: Record<number, number> = {}; // timestamp in ms when lock expires
+
+const apAlertHistory: Record<number, number[]> = {};
+const apAlertLocked: Record<number, number> = {}; // timestamp in ms when lock expires
+
+const lastSentAlerts: Record<string, { text: string; timestamp: number }> = {};
+
+function shouldBounceAlert(channel: 'telegram' | 'whatsapp', destination: string, text: string): boolean {
+  const key = `${channel}_${destination}`;
+  const now = Date.now();
+  const lastAlert = lastSentAlerts[key];
+  
+  if (lastAlert && lastAlert.text === text && (now - lastAlert.timestamp) < 60 * 1000) {
+    console.log(`[Alert Shield] Bounced duplicate ${channel} alert to ${destination} (sent ${Math.round((now - lastAlert.timestamp)/1000)}s ago).`);
+    return true;
+  }
+  
+  lastSentAlerts[key] = { text, timestamp: now };
+  return false;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [];
+  if (hours > 0) parts.push(`${hours} jam`);
+  if (minutes > 0) parts.push(`${minutes} menit`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds} detik`);
+
+  return parts.join(' ');
+}
+
+async function getActiveNotificationChannels(): Promise<string> {
+  try {
+    const [tgResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_enabled'");
+    const [waResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'wa_enabled'");
+    const tgActive = tgResult[0]?.key_value === 'true';
+    const waActive = waResult[0]?.key_value === 'true';
+    
+    const active = [];
+    if (tgActive) active.push('Telegram');
+    if (waActive) active.push('WhatsApp');
+    
+    if (active.length > 0) {
+      return ` [Notifikasi Aktif: ${active.join(', ')}]`;
+    }
+    return ' [Notifikasi Aktif: Tidak ada]';
+  } catch (err) {
+    return '';
+  }
+}
+
 async function sendTelegramAlert(title: string, message: string, isCritical: boolean) {
   try {
-     const [tkResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_bot_token'");
-     const [cdResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_chat_id'");
-     const token = tkResult[0]?.key_value;
-     const chatId = cdResult[0]?.key_value;
-     if (!token || !chatId) return;
+    const [enabledResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_enabled'");
+    const isEnabled = enabledResult[0]?.key_value === 'true';
+    if (!isEnabled) {
+      console.log('[Telegram Alert] Skip pengiriman: Integrasi Telegram dinonaktifkan.');
+      return;
+    }
 
-     const emoji = isCritical ? '🔴 <b>CRITICAL ALERT</b>' : '🟢 <b>RECOVERY</b>';
-     const text = `${emoji}\n\n<b>${title}</b>\n${message}`;
-     
-     // fire and forget fetch
-     fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
-     }).catch(e => console.error("[Telegram] Error:", e));
+    const [tkResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_bot_token'");
+    const [cdResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'telegram_chat_id'");
+    const token = tkResult[0]?.key_value;
+    const chatId = cdResult[0]?.key_value;
+    if (!token || !chatId) {
+      console.log('[Telegram Alert] Skip pengiriman: Token bot atau Chat ID kosong di pengaturan.');
+      return;
+    }
 
-  } catch(e) {}
+    const emoji = isCritical ? '🔴 <b>CRITICAL ALERT</b>' : '🟢 <b>RECOVERY</b>';
+    const text = `${emoji}\n\n<b>${title}</b>\n${message}`;
+    
+    if (shouldBounceAlert('telegram', chatId, text)) return;
+
+    console.log(`[Telegram Alert] Mengirim notifikasi ke chat ${chatId}: "${title}"`);
+    fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+    })
+    .then(async res => {
+      if (res.ok) {
+        console.log('[Telegram Alert] Berhasil dikirim ke Telegram.');
+      } else {
+        const errText = await res.text();
+        console.error('[Telegram Alert] Gagal dari API Telegram:', errText);
+      }
+    })
+    .catch(e => console.error("[Telegram Alert] Kesalahan koneksi:", e));
+  } catch (e) {
+    console.error("[Telegram Alert] Gagal kirim notifikasi:", e);
+  }
+}
+
+async function sendWhatsAppAlert(title: string, message: string, isCritical: boolean) {
+  try {
+    const [enabledResult]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'wa_enabled'");
+    const isEnabled = enabledResult[0]?.key_value === 'true';
+    if (!isEnabled) {
+      console.log('[WhatsApp Alert] Skip pengiriman: Integrasi WhatsApp dinonaktifkan.');
+      return;
+    }
+
+    const emoji = isCritical ? '🔴 *CRITICAL ALERT*' : '🟢 *RECOVERY*';
+    const text = `${emoji}\n\n*${title}*\n${message}`;
+    
+    if (shouldBounceAlert('whatsapp', 'broadcast_group', text)) return;
+
+    console.log(`[WhatsApp Alert] Menjalankan broadcast notifikasi: "${title}"`);
+    const success = await sendWhatsAppAlertBroadcast(title, text);
+    if (success) {
+      console.log('[WhatsApp Alert] Broadcast berhasil dikirim.');
+    } else {
+      console.error('[WhatsApp Alert] Broadcast gagal (mungkin tidak ada target aktif atau gateway belum terhubung).');
+    }
+  } catch (e) {
+    console.error("[WhatsApp Alert] Gagal menjalankan broadcast:", e);
+  }
+}
+
+async function handleStatusTransition(
+  id: number,
+  name: string,
+  type: 'device' | 'ap',
+  isOffline: boolean,
+  parentDeviceId: number | null
+): Promise<{ shouldAlert: boolean; downtimeMsg: string }> {
+  const now = Date.now();
+  
+  // 1. Downtime calculation
+  let downtimeMsg = "";
+  if (type === 'device') {
+    if (isOffline) {
+      deviceOfflineTime[id] = now;
+    } else {
+      const offlineStart = deviceOfflineTime[id];
+      if (offlineStart) {
+        const diff = now - offlineStart;
+        downtimeMsg = ` (Kembali aktif setelah mati selama ${formatDuration(diff)})`;
+        delete deviceOfflineTime[id];
+      }
+    }
+  } else {
+    if (isOffline) {
+      apOfflineTime[id] = now;
+    } else {
+      const offlineStart = apOfflineTime[id];
+      if (offlineStart) {
+        const diff = now - offlineStart;
+        downtimeMsg = ` (Kembali aktif setelah mati selama ${formatDuration(diff)})`;
+        delete apOfflineTime[id];
+      }
+    }
+  }
+
+  // 2. Flapping detection
+  const historyRecord = type === 'device' ? deviceAlertHistory : apAlertHistory;
+  const lockRecord = type === 'device' ? deviceAlertLocked : apAlertLocked;
+
+  if (!historyRecord[id]) {
+    historyRecord[id] = [];
+  }
+
+  // Add current transition timestamp
+  historyRecord[id].push(now);
+
+  // Prune history to last 2 minutes
+  historyRecord[id] = historyRecord[id].filter(t => now - t <= 2 * 60 * 1000);
+
+  // Check if locked
+  const isLocked = now < (lockRecord[id] || 0);
+
+  if (isLocked) {
+    console.log(`[Alert Shield] Notifications for ${type} ${name} (ID: ${id}) suppressed due to active lock.`);
+    return { shouldAlert: false, downtimeMsg };
+  }
+
+  // If transition count in last 2 minutes is >= 4, trigger lock!
+  if (historyRecord[id].length >= 4) {
+    const lockDuration = 5 * 60 * 1000; // 5 minutes
+    lockRecord[id] = now + lockDuration;
+
+    const warningTitle = `⚠️ Koneksi Tidak Stabil: Jaringan ${name} Naik-Turun`;
+    const warningMessage = `Koneksi pada "${name}" terdeteksi terputus-sambung berulang kali dalam waktu singkat. Untuk menghindari spam, notifikasi Telegram & WhatsApp untuk area ini dinonaktifkan sementara selama 5 menit. Pemantauan di dashboard tetap berjalan.`;
+
+    console.log(`[Alert Shield] Flapping detected on ${type} ${name} (ID: ${id}). Locking for 5 minutes.`);
+
+    // Send warning alert
+    sendTelegramAlert(warningTitle, warningMessage, true);
+    sendWhatsAppAlert(warningTitle, warningMessage, true);
+
+    // Save warning notification to database so it's visible on dashboard
+    try {
+      const channelsLog = await getActiveNotificationChannels();
+      await db.query(
+        `INSERT INTO notifications (device_id, device_name, type, title, message, action_url, entity_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [ parentDeviceId, name, 'warning', warningTitle, warningMessage + channelsLog, type === 'device' ? `/admin/devices?detail=${id}` : '/admin/aps', type ]
+      );
+    } catch (dbErr) {
+      console.error("Failed to log flapping warning to DB:", dbErr);
+    }
+
+    return { shouldAlert: false, downtimeMsg };
+  }
+
+  return { shouldAlert: true, downtimeMsg };
 }
 
 // Background ICMP Ping (For Online/Offline Status)
@@ -178,20 +384,28 @@ setInterval(async () => {
       if (prevStatus !== newStatus) {
         const isOffline = newStatus === 'offline';
         const type = isOffline ? 'critical' : 'info';
-        const title = isOffline ? `Router Down: ${device.name}` : `Router Up: ${device.name}`;
+        const title = isOffline
+          ? `🚨 Gangguan Jaringan: Pusat Kontrol ${device.name} Terputus`
+          : `✅ Pemulihan Jaringan: Pusat Kontrol ${device.name} Normal Kembali`;
         const message = isOffline
-              ? `MikroTik "${device.name}" (${device.host}) tidak merespons setelah 3 kali percobaan. Status: ${res.output || 'Timeout'}`
-              : `MikroTik "${device.name}" (${device.host}) kembali normal.`;
+          ? `Pusat Kontrol Jaringan "${device.name}" (${device.host}) terdeteksi terputus. Koneksi internet di area cakupan ini mungkin terganggu atau terputus sementara.`
+          : `Pusat Kontrol Jaringan "${device.name}" (${device.host}) telah aktif kembali dan seluruh layanan berjalan normal.`;
 
         // Update database status
         await db.query("UPDATE mikrotik_devices SET status = ? WHERE id = ?", [newStatus, device.id]);
 
+        const channelsLog = await getActiveNotificationChannels();
         await db.query(
           `INSERT INTO notifications (device_id, device_name, type, title, message, action_url, entity_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [ device.id, device.name, type, title, message, `/admin/devices?detail=${device.id}`, 'mikrotik' ]
+          [ device.id, device.name, type, title, message + channelsLog, `/admin/devices?detail=${device.id}`, 'mikrotik' ]
         );
         
-        sendTelegramAlert(title, message, isOffline);
+        const { shouldAlert, downtimeMsg } = await handleStatusTransition(device.id, device.name, 'device', isOffline, device.id);
+        if (shouldAlert) {
+          sendTelegramAlert(title, message + downtimeMsg, isOffline);
+          sendWhatsAppAlert(title, message + downtimeMsg, isOffline);
+        }
+        
         await db.query(
           `INSERT INTO device_uptime_logs (node_id, node_name, status, entity_type) VALUES (?, ?, ?, ?)`,
           [`router-${device.id}`, device.name, newStatus, 'mikrotik']
@@ -225,20 +439,27 @@ setInterval(async () => {
       if (prevStatus !== newStatus) {
         const isOffline = newStatus === 'offline';
         const type = isOffline ? 'warning' : 'info';
-        const title = isOffline ? `AP Down: ${ap.name}` : `AP Up: ${ap.name}`;
+        const title = isOffline
+          ? `⚠️ Gangguan Wi-Fi: Titik Akses ${ap.name} Nonaktif`
+          : `✅ Pemulihan Wi-Fi: Titik Akses ${ap.name} Aktif Kembali`;
         const message = isOffline
-              ? `Access Point "${ap.name}" di ${ap.group_label || 'Lokasi'} (${ap.ip_address}) terdeteksi mati setelah 3 kali percobaan.`
-              : `Access Point "${ap.name}" kembali melayani client.`;
+          ? `Titik Akses Wi-Fi "${ap.name}" di ${ap.group_label || 'Lokasi'} (${ap.ip_address}) terdeteksi terputus. Pengguna di sekitar area ini sementara waktu tidak dapat terhubung ke jaringan Wi-Fi.`
+          : `Titik Akses Wi-Fi "${ap.name}" telah aktif kembali dan siap melayani pengguna.`;
 
         // Update DB status
         await db.query(`UPDATE mikrotik_aps SET status = ? WHERE id = ?`, [newStatus, ap.id]);
 
+        const channelsLog = await getActiveNotificationChannels();
         await db.query(
           `INSERT INTO notifications (device_id, device_name, type, title, message, action_url, entity_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [ ap.mikrotik_id, ap.name, type, title, message, '/admin/aps', 'ap' ]
+          [ ap.mikrotik_id, ap.name, type, title, message + channelsLog, '/admin/aps', 'ap' ]
         );
 
-        sendTelegramAlert(title, message, isOffline);
+        const { shouldAlert, downtimeMsg } = await handleStatusTransition(ap.id, ap.name, 'ap', isOffline, ap.mikrotik_id);
+        if (shouldAlert) {
+          sendTelegramAlert(title, message + downtimeMsg, isOffline);
+          sendWhatsAppAlert(title, message + downtimeMsg, isOffline);
+        }
 
         await db.query(
           `INSERT INTO device_uptime_logs (node_id, node_name, status, entity_type) VALUES (?, ?, ?, ?)`,
@@ -286,11 +507,14 @@ setInterval(async () => {
     for (const device of devices) {
       try {
         const client = createMikrotikClient(device);
-        const api = await client.connect();
-        
-        // Fetch last 50 logs from router
-        const logs = await api.menu('/log').print();
-        await client.close();
+        let logs = [];
+        try {
+          const api = await client.connect();
+          // Fetch last 50 logs from router
+          logs = await api.menu('/log').print();
+        } finally {
+          await client.close().catch(() => {});
+        }
 
         for (const log of logs) {
           // Check if this log already exists in our DB to prevent duplication
@@ -389,6 +613,16 @@ setInterval(async () => {
 async function startServer() {
   await initializeDB();
   app.use(cors());
+
+  // Load WhatsApp if enabled
+  try {
+    const [rows]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = 'wa_enabled'");
+    if (rows[0]?.key_value === 'true') {
+      initAllActiveWhatsAppSessions();
+    }
+  } catch (err) {
+    console.error("[WhatsApp] Startup check failed:", err);
+  }
 
   // Try to load Vite if we are in DEV mode. Otherwise serve statically.
   if (process.env.NODE_ENV !== 'production' && process.env.AI_MODE !== 'true') {

@@ -432,46 +432,79 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
 
   const handleReboot = async (id: number) => {
     if (!confirm('Are you sure you want to reboot this device?')) return;
+    const toastId = toast.loading('Mengirim perintah reboot...', {
+      style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    });
     try {
-      await authFetch(`/api/mikrotiks/${id}/reboot`, { method: 'POST' });
-      alert('Reboot command sent');
-    } catch (err) {
-      console.error('Failed to reboot:', err);
+      const res = await authFetch(`/api/mikrotiks/${id}/reboot`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal melakukan reboot device');
+      }
+      toast.success('Perintah reboot berhasil dikirim', { id: toastId, style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' } });
+    } catch (err: any) {
+      toast.error(`Reboot gagal: ${err.message || String(err)}`, { id: toastId, style: { background: '#18181b', color: '#ef4444', border: '1px solid #ef4444' } });
     }
   };
 
   const handleToggleInterface = async (deviceId: number, ifaceName: string, isDisabled: string) => {
+    const actionLabel = isDisabled === 'true' ? 'mengaktifkan' : 'menonaktifkan';
+    const actionLabelCap = actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1);
+    const toastId = toast.loading(`${actionLabelCap} interface ${ifaceName}...`, {
+      style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    });
     try {
       const res = await authFetch(`/api/mikrotiks/${deviceId}/interfaces/${ifaceName}/toggle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ disabled: isDisabled })
       });
-      if (res.ok) {
-        // Refresh interfaces
-        const interfacesRes = await authFetch(`/api/mikrotiks/${deviceId}/interfaces`);
-        const interfacesData = await interfacesRes.json();
-        setDeviceInterfaces(interfacesData);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Gagal ${actionLabel} interface`);
       }
-    } catch (err) {
-      console.error('Failed to toggle interface:', err);
+      toast.success(`Interface ${ifaceName} berhasil di-${isDisabled === 'true' ? 'aktifkan' : 'nonaktifkan'}`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+      });
+      // Refresh interfaces
+      const interfacesRes = await authFetch(`/api/mikrotiks/${deviceId}/interfaces`);
+      const interfacesData = await interfacesRes.json();
+      setDeviceInterfaces(interfacesData);
+    } catch (err: any) {
+      toast.error(`Gagal toggle interface: ${err.message || String(err)}`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#ef4444', border: '1px solid #ef4444' }
+      });
     }
   };
 
   const handleRename = async (id: number) => {
     if (!newName) return;
+    const toastId = toast.loading(`Mengubah nama router menjadi "${newName}"...`, {
+      style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    });
     try {
       const res = await authFetch(`/api/mikrotiks/${id}/set-identity`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName })
       });
-      if (res.ok) {
-        setIsRenaming(false);
-        if (selectedDevice) fetchDeviceStatus(selectedDevice);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal mengubah identitas router');
       }
-    } catch (err) {
-      console.error('Failed to rename:', err);
+      toast.success(`Identitas router berhasil diubah menjadi "${newName}"`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+      });
+      setIsRenaming(false);
+      if (selectedDevice) fetchDeviceStatus(selectedDevice);
+    } catch (err: any) {
+      toast.error(`Gagal mengubah nama: ${err.message || String(err)}`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#ef4444', border: '1px solid #ef4444' }
+      });
     }
   };
 
@@ -489,9 +522,12 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         body: JSON.stringify({ command: cmdToRun })
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Execution failed on router');
+      }
       setCommandResult(JSON.stringify(data.result, null, 2));
-    } catch (err) {
-      setCommandResult('Execution failed');
+    } catch (err: any) {
+      setCommandResult(`Execution failed: ${err.message || String(err)}`);
     } finally {
       setIsExecuting(false);
     }
@@ -693,22 +729,41 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
   const handleAddQueue = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDevice) return;
+    const toastId = toast.loading(`Menambahkan queue "${newQueue.name}"...`, {
+      style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    });
     try {
-      await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues`, {
+      const res = await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newQueue)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menambahkan queue');
+      }
+      toast.success(`Queue "${newQueue.name}" berhasil ditambahkan`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
       });
       setShowAddQueue(false);
       setNewQueue({ name: '', target: '', maxLimit: '', burstLimit: '', comment: '' });
       fetchQueues();
-    } catch (err) { console.error('Add queue error', err); }
+    } catch (err: any) {
+      toast.error(`Gagal tambah queue: ${err.message || String(err)}`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#ef4444', border: '1px solid #ef4444' }
+      });
+    }
   };
 
   const handleEditQueue = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDevice || !showEditQueue) return;
+    const toastId = toast.loading(`Mengubah queue "${showEditQueue.name}"...`, {
+      style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    });
     try {
-      await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues/${showEditQueue.id}`, {
+      const res = await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues/${showEditQueue.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: showEditQueue.name,
@@ -717,9 +772,22 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
           comment: showEditQueue.comment
         })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal mengubah queue');
+      }
+      toast.success(`Queue "${showEditQueue.name}" berhasil diubah`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+      });
       setShowEditQueue(null);
       fetchQueues();
-    } catch (err) { console.error('Edit queue error', err); }
+    } catch (err: any) {
+      toast.error(`Gagal edit queue: ${err.message || String(err)}`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#ef4444', border: '1px solid #ef4444' }
+      });
+    }
   };
 
 
@@ -742,18 +810,27 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
     if (!result.isConfirmed) return;
 
     const newDisabled = isNowDisabled ? 'true' : 'false';
+    const toastId = toast.loading(`Mengubah status queue "${qname}"...`, {
+      style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    });
     try {
-      await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues/${qid}/toggle`, {
+      const res = await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues/${qid}/toggle`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ disabled: newDisabled })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Gagal mengubah status queue`);
+      }
       toast.success(`Queue "${qname}" berhasil di-${actionLabel.toLowerCase()}kan`, {
+        id: toastId,
         style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
       });
       fetchQueues();
-    } catch (err) {
-      toast.error('Gagal mengubah status queue', {
-        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    } catch (err: any) {
+      toast.error(`Gagal mengubah status queue: ${err.message || String(err)}`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#ef4444', border: '1px solid #ef4444' }
       });
     }
   };
@@ -774,15 +851,24 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
     });
     if (!result.isConfirmed) return;
 
+    const toastId = toast.loading(`Menghapus queue "${qname}"...`, {
+      style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    });
     try {
-      await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues/${qid}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/mikrotiks/${selectedDevice.id}/queues/${qid}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menghapus queue');
+      }
       toast.success(`Queue "${qname}" berhasil dihapus`, {
+        id: toastId,
         style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
       });
       fetchQueues();
-    } catch (err) {
-      toast.error('Gagal menghapus queue', {
-        style: { background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46' }
+    } catch (err: any) {
+      toast.error(`Gagal menghapus queue: ${err.message || String(err)}`, {
+        id: toastId,
+        style: { background: '#18181b', color: '#ef4444', border: '1px solid #ef4444' }
       });
     }
   };

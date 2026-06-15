@@ -42,3 +42,7 @@ coverage/
 *.db
 *.sqlite
 *.sqlite3
+
+# WhatsApp Sessions
+server/wa_session/
+server/wa_sessions/

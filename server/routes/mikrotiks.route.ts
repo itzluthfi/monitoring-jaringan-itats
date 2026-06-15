@@ -192,13 +192,16 @@ mikrotiksRouter.get('/:id/status', async (req, res) => {
       try {
         const result = await withRetry(async () => {
           const client = createMikrotikClient(device);
-          const api = await client.connect();
-          const [resSys, identityArr] = await Promise.all([
-            (api as any).rosApi.write(['/system/resource/print']).catch(() => [{}]),
-            (api as any).rosApi.write(['/system/identity/print']).catch(() => [{}]),
-          ]);
-          await client.close().catch(() => {});
-          return { resSys, identityArr };
+          try {
+            const api = await client.connect();
+            const [resSys, identityArr] = await Promise.all([
+              (api as any).rosApi.write(['/system/resource/print']).catch(() => [{}]),
+              (api as any).rosApi.write(['/system/identity/print']).catch(() => [{}]),
+            ]);
+            return { resSys, identityArr };
+          } finally {
+            await client.close().catch(() => {});
+          }
         });
 
         const sys = Array.isArray(result.resSys) ? result.resSys[0] || {} : {};
@@ -297,10 +300,18 @@ mikrotiksRouter.post('/:id/reboot', requireAuth, async (req, res) => {
     const [[device]]: any = await db.query("SELECT * FROM mikrotik_devices WHERE id = ?", [req.params.id]);
     if (!device) return res.status(404).json({ error: "Device not found" });
 
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      return res.json({ success: true });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    await api.menu("/system/reboot").print();
-    res.json({ success: true });
+    try {
+      const api = await client.connect();
+      await api.menu("/system/reboot").print();
+      res.json({ success: true });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -514,11 +525,18 @@ mikrotiksRouter.post('/:id/interfaces/:name/toggle', requireAuth, async (req, re
     const { disabled } = req.body;
     const action = disabled === "true" ? "enable" : "disable";
 
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      return res.json({ success: true });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    await api.menu("/interface").where({ name: req.params.name }).exec(action);
-    await client.close();
-    res.json({ success: true });
+    try {
+      const api = await client.connect();
+      await api.menu("/interface").where({ name: req.params.name }).exec(action);
+      res.json({ success: true });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -532,11 +550,19 @@ mikrotiksRouter.post('/:id/set-identity', requireAuth, async (req, res) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
 
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      await db.query("UPDATE mikrotik_devices SET name = ? WHERE id = ?", [name, req.params.id]);
+      return res.json({ success: true });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    await api.menu("/system/identity").set({ name });
-    await client.close();
-    res.json({ success: true });
+    try {
+      const api = await client.connect();
+      await api.menu("/system/identity").set({ name });
+      res.json({ success: true });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -550,17 +576,24 @@ mikrotiksRouter.post('/:id/exec', requireAuth, async (req, res) => {
     const { command } = req.body;
     if (!command) return res.status(400).json({ error: "Command is required" });
 
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      return res.json({ success: true, result: [{ message: `Simulated execution of: ${command}` }] });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    const parts = Array.isArray(command) 
-      ? command 
-      : typeof command === 'string' 
-        ? command.split(' ').map((s: string) => s.trim()).filter(Boolean) 
-        : [];
-        
-    const result = await (api as any).rosApi.write(parts);
-    await client.close();
-    res.json({ success: true, result });
+    try {
+      const api = await client.connect();
+      const parts = Array.isArray(command) 
+        ? command 
+        : typeof command === 'string' 
+          ? command.split(' ').map((s: string) => s.trim()).filter(Boolean) 
+          : [];
+          
+      const result = await (api as any).rosApi.write(parts);
+      res.json({ success: true, result });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -593,49 +626,52 @@ mikrotiksRouter.get('/:id/queues', requireAuth, async (req, res) => {
     }
   
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    
-    // Two separate calls: config (max-limit, target, etc.) + stats (rate, bytes)
-    const [configQueues, statsQueues] = await Promise.all([
-      (api as any).rosApi.write(["/queue/simple/print"]).catch(() => []),
-      (api as any).rosApi.write(["/queue/simple/print", "=stats="]).catch(() => []),
-    ]);
-    await client.close();
-    
-    const statsMap: Record<string, any> = {};
-    (statsQueues || []).forEach((s: any) => {
-      if (s['.id']) statsMap[s['.id']] = s;
-    });
-    
-    const merged = (configQueues || []).map((q: any) => {
-      const stats = statsMap[q['.id']] || {};
-      const merged = { ...q, ...stats };
+    try {
+      const api = await client.connect();
       
-      if (merged.rate && typeof merged.rate === 'string') {
-        const parts = merged.rate.split('/');
-        if (parts.length === 2) {
-          merged['tx-rate'] = parts[0];
-          merged['rx-rate'] = parts[1];
+      // Two separate calls: config (max-limit, target, etc.) + stats (rate, bytes)
+      const [configQueues, statsQueues] = await Promise.all([
+        (api as any).rosApi.write(["/queue/simple/print"]).catch(() => []),
+        (api as any).rosApi.write(["/queue/simple/print", "=stats="]).catch(() => []),
+      ]);
+      
+      const statsMap: Record<string, any> = {};
+      (statsQueues || []).forEach((s: any) => {
+        if (s['.id']) statsMap[s['.id']] = s;
+      });
+      
+      const merged = (configQueues || []).map((q: any) => {
+        const stats = statsMap[q['.id']] || {};
+        const merged = { ...q, ...stats };
+        
+        if (merged.rate && typeof merged.rate === 'string') {
+          const parts = merged.rate.split('/');
+          if (parts.length === 2) {
+            merged['tx-rate'] = parts[0];
+            merged['rx-rate'] = parts[1];
+          }
         }
-      }
-      if (merged.bytes && typeof merged.bytes === 'string') {
-        const parts = merged.bytes.split('/');
-        if (parts.length === 2) {
-          merged['tx-byte'] = parts[0];
-          merged['rx-byte'] = parts[1];
+        if (merged.bytes && typeof merged.bytes === 'string') {
+          const parts = merged.bytes.split('/');
+          if (parts.length === 2) {
+            merged['tx-byte'] = parts[0];
+            merged['rx-byte'] = parts[1];
+          }
         }
-      }
-      if (merged['packet-rate'] && typeof merged['packet-rate'] === 'string') {
-        const parts = merged['packet-rate'].split('/');
-        if (parts.length === 2) {
-          merged['tx-packet-rate'] = parts[0];
-          merged['rx-packet-rate'] = parts[1];
+        if (merged['packet-rate'] && typeof merged['packet-rate'] === 'string') {
+          const parts = merged['packet-rate'].split('/');
+          if (parts.length === 2) {
+            merged['tx-packet-rate'] = parts[0];
+            merged['rx-packet-rate'] = parts[1];
+          }
         }
-      }
-      return merged;
-    });
-    
-    res.json(merged);
+        return merged;
+      });
+      
+      res.json(merged);
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 
@@ -647,14 +683,21 @@ mikrotiksRouter.post('/:id/queues', requireAuth, async (req, res) => {
     const { name, target, maxLimit, burstLimit, comment } = req.body;
     if (!name || !target || !maxLimit) return res.status(400).json({ error: "name, target, maxLimit required" });
   
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      return res.json({ success: true });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    const cmd = ["/queue/simple/add", `=name=${name}`, `=target=${target}`, `=max-limit=${maxLimit}`];
-    if (burstLimit) cmd.push(`=burst-limit=${burstLimit}`);
-    if (comment) cmd.push(`=comment=${comment}`);
-    await (api as any).rosApi.write(cmd);
-    await client.close();
-    res.json({ success: true });
+    try {
+      const api = await client.connect();
+      const cmd = ["/queue/simple/add", `=name=${name}`, `=target=${target}`, `=max-limit=${maxLimit}`];
+      if (burstLimit) cmd.push(`=burst-limit=${burstLimit}`);
+      if (comment) cmd.push(`=comment=${comment}`);
+      await (api as any).rosApi.write(cmd);
+      res.json({ success: true });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 
@@ -664,16 +707,24 @@ mikrotiksRouter.put('/:id/queues/:qid', requireAuth, async (req, res) => {
     if (!device) return res.status(404).json({ error: "Device not found" });
 
     const { name, target, maxLimit, comment } = req.body;
+
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      return res.json({ success: true });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    const cmd = ["/queue/simple/set", `=.id=${req.params.qid}`];
-    if (name) cmd.push(`=name=${name}`);
-    if (target) cmd.push(`=target=${target}`);
-    if (maxLimit) cmd.push(`=max-limit=${maxLimit}`);
-    if (comment !== undefined) cmd.push(`=comment=${comment}`);
-    await (api as any).rosApi.write(cmd);
-    await client.close();
-    res.json({ success: true });
+    try {
+      const api = await client.connect();
+      const cmd = ["/queue/simple/set", `=.id=${req.params.qid}`];
+      if (name) cmd.push(`=name=${name}`);
+      if (target) cmd.push(`=target=${target}`);
+      if (maxLimit) cmd.push(`=max-limit=${maxLimit}`);
+      if (comment !== undefined) cmd.push(`=comment=${comment}`);
+      await (api as any).rosApi.write(cmd);
+      res.json({ success: true });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 
@@ -683,11 +734,19 @@ mikrotiksRouter.put('/:id/queues/:qid/toggle', requireAuth, async (req, res) => 
     if (!device) return res.status(404).json({ error: "Device not found" });
 
     const { disabled } = req.body;
+
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      return res.json({ success: true });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    await (api as any).rosApi.write(["/queue/simple/set", `=.id=${req.params.qid}`, `=disabled=${disabled}`]);
-    await client.close();
-    res.json({ success: true });
+    try {
+      const api = await client.connect();
+      await (api as any).rosApi.write(["/queue/simple/set", `=.id=${req.params.qid}`, `=disabled=${disabled}`]);
+      res.json({ success: true });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 
@@ -696,11 +755,18 @@ mikrotiksRouter.delete('/:id/queues/:qid', requireAuth, async (req, res) => {
     const [[device]]: any = await db.query("SELECT * FROM mikrotik_devices WHERE id = ?", [req.params.id]);
     if (!device) return res.status(404).json({ error: "Device not found" });
 
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      return res.json({ success: true });
+    }
+
     const client = createMikrotikClient(device);
-    const api = await client.connect();
-    await (api as any).rosApi.write(["/queue/simple/remove", `=.id=${req.params.qid}`]);
-    await client.close();
-    res.json({ success: true });
+    try {
+      const api = await client.connect();
+      await (api as any).rosApi.write(["/queue/simple/remove", `=.id=${req.params.qid}`]);
+      res.json({ success: true });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 
@@ -711,83 +777,11 @@ mikrotiksRouter.get('/:id/debug-wifi', async (req, res) => {
     if (!device) return res.status(404).json({ error: "Device not found" });
 
     const client = createMikrotikClient(device);
-    const api = await client.connect();
+    try {
+      const api = await client.connect();
 
-    const [
-      sysResource,
-      capManager,
-      capRemoteCap,
-      capAccessPoints,
-      capIfaces,
-      capRegTable,
-      capRadios,
-      wlanIfaces,
-      wlanRegTable,
-      dhcpLeases,
-      wifiIfaces,        // RouterOS v7
-      wifiRegTable,      // RouterOS v7
-      neighbors,
-    ] = await Promise.all([
-      (api as any).rosApi.write(["/system/resource/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/caps-man/manager/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/caps-man/remote-cap/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/caps-man/access-point/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/caps-man/interface/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/caps-man/registration-table/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/caps-man/radio/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/interface/wireless/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/interface/wireless/registration-table/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/ip/dhcp-server/lease/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/interface/wifi/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/interface/wifi/registration-table/print"]).catch((e: any) => ({ error: String(e) })),
-      (api as any).rosApi.write(["/ip/neighbor/print"]).catch((e: any) => ({ error: String(e) })),
-    ]);
-
-    await client.close();
-
-    // Extract RouterOS version
-    const rosVersion = Array.isArray(sysResource) && sysResource[0]
-      ? sysResource[0]['version'] || 'unknown'
-      : 'unknown';
-    const rosMajorVersion = parseInt(rosVersion.split('.')[0]) || 6;
-
-    // CAPsMAN manager status
-    const capManagerEnabled = Array.isArray(capManager) && capManager.length > 0
-      ? (capManager[0]?.enabled === 'true' || capManager[0]?.enabled === true)
-      : false;
-
-    const len = (v: any) => Array.isArray(v) ? v.length : (v?.error ? `ERROR: ${v.error}` : 'unknown');
-
-    res.json({
-      device: { id: device.id, name: device.name, host: device.host },
-      ros: { version: rosVersion, majorVersion: rosMajorVersion },
-      diagnosis: {
-        capsman_manager_enabled: capManagerEnabled,
-        capsman_remote_caps: len(capRemoteCap),
-        recommendation: !capManagerEnabled
-          ? '⚠️ CAPsMAN belum aktif. Di WinBox: CAPsMAN → Manager → centang Enabled'
-          : (len(capRemoteCap) === 0
-            ? '⚠️ CAPsMAN aktif tapi tidak ada AP yang join. Cek: /caps-man/remote-cap/print'
-            : '✅ CAPsMAN aktif dan ada remote-cap terdaftar'),
-        routeros_version_note: rosMajorVersion >= 7
-          ? '📌 RouterOS v7: gunakan /interface/wifi/ bukan /interface/wireless/'
-          : '📌 RouterOS v6: gunakan /interface/wireless/ dan /caps-man/',
-      },
-      summary: {
-        '[v6] caps-man/manager-enabled': capManagerEnabled,
-        '[v6] caps-man/remote-cap': len(capRemoteCap),
-        '[v6] caps-man/access-point': len(capAccessPoints),
-        '[v6] caps-man/interface': len(capIfaces),
-        '[v6] caps-man/registration-table': len(capRegTable),
-        '[v6] caps-man/radio': len(capRadios),
-        '[v6] interface/wireless': len(wlanIfaces),
-        '[v6] interface/wireless/registration-table': len(wlanRegTable),
-        '[v7] interface/wifi': len(wifiIfaces),
-        '[v7] interface/wifi/registration-table': len(wifiRegTable),
-        'ip/dhcp-server/lease': len(dhcpLeases),
-        'ip/neighbor': len(neighbors),
-      },
-      data: {
+      const [
+        sysResource,
         capManager,
         capRemoteCap,
         capAccessPoints,
@@ -796,12 +790,86 @@ mikrotiksRouter.get('/:id/debug-wifi', async (req, res) => {
         capRadios,
         wlanIfaces,
         wlanRegTable,
-        wifiIfaces,
-        wifiRegTable,
         dhcpLeases,
+        wifiIfaces,        // RouterOS v7
+        wifiRegTable,      // RouterOS v7
         neighbors,
-      }
-    });
+      ] = await Promise.all([
+        (api as any).rosApi.write(["/system/resource/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/caps-man/manager/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/caps-man/remote-cap/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/caps-man/access-point/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/caps-man/interface/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/caps-man/registration-table/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/caps-man/radio/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/interface/wireless/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/interface/wireless/registration-table/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/ip/dhcp-server/lease/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/interface/wifi/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/interface/wifi/registration-table/print"]).catch((e: any) => ({ error: String(e) })),
+        (api as any).rosApi.write(["/ip/neighbor/print"]).catch((e: any) => ({ error: String(e) })),
+      ]);
+
+      // Extract RouterOS version
+      const rosVersion = Array.isArray(sysResource) && sysResource[0]
+        ? sysResource[0]['version'] || 'unknown'
+        : 'unknown';
+      const rosMajorVersion = parseInt(rosVersion.split('.')[0]) || 6;
+
+      // CAPsMAN manager status
+      const capManagerEnabled = Array.isArray(capManager) && capManager.length > 0
+        ? (capManager[0]?.enabled === 'true' || capManager[0]?.enabled === true)
+        : false;
+
+      const len = (v: any) => Array.isArray(v) ? v.length : (v?.error ? `ERROR: ${v.error}` : 'unknown');
+
+      res.json({
+        device: { id: device.id, name: device.name, host: device.host },
+        ros: { version: rosVersion, majorVersion: rosMajorVersion },
+        diagnosis: {
+          capsman_manager_enabled: capManagerEnabled,
+          capsman_remote_caps: len(capRemoteCap),
+          recommendation: !capManagerEnabled
+            ? '⚠️ CAPsMAN belum aktif. Di WinBox: CAPsMAN → Manager → centang Enabled'
+            : (len(capRemoteCap) === 0
+              ? '⚠️ CAPsMAN aktif tapi tidak ada AP yang join. Cek: /caps-man/remote-cap/print'
+              : '✅ CAPsMAN aktif dan ada remote-cap terdaftar'),
+          routeros_version_note: rosMajorVersion >= 7
+            ? '📌 RouterOS v7: gunakan /interface/wifi/ bukan /interface/wireless/'
+            : '📌 RouterOS v6: gunakan /interface/wireless/ dan /caps-man/',
+        },
+        summary: {
+          '[v6] caps-man/manager-enabled': capManagerEnabled,
+          '[v6] caps-man/remote-cap': len(capRemoteCap),
+          '[v6] caps-man/access-point': len(capAccessPoints),
+          '[v6] caps-man/interface': len(capIfaces),
+          '[v6] caps-man/registration-table': len(capRegTable),
+          '[v6] caps-man/radio': len(capRadios),
+          '[v6] interface/wireless': len(wlanIfaces),
+          '[v6] interface/wireless/registration-table': len(wlanRegTable),
+          '[v7] interface/wifi': len(wifiIfaces),
+          '[v7] interface/wifi/registration-table': len(wifiRegTable),
+          'ip/dhcp-server/lease': len(dhcpLeases),
+          'ip/neighbor': len(neighbors),
+        },
+        data: {
+          capManager,
+          capRemoteCap,
+          capAccessPoints,
+          capIfaces,
+          capRegTable,
+          capRadios,
+          wlanIfaces,
+          wlanRegTable,
+          wifiIfaces,
+          wifiRegTable,
+          dhcpLeases,
+          neighbors,
+        }
+      });
+    } finally {
+      await client.close().catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

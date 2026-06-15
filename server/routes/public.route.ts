@@ -158,8 +158,8 @@ publicRouter.get("/campus-map", async (req, res) => {
           let bwTxBps = 0;
 
           if (process.env.MIKROTIK_SIMULATION_MODE !== "true") {
+            const client = createMikrotikClient(device);
             try {
-              const client = createMikrotikClient(device);
               const api = await client.connect();
               liveStatus = "online";
 
@@ -242,7 +242,6 @@ publicRouter.get("/campus-map", async (req, res) => {
                 }
               }
 
-              await client.close().catch(() => {});
               await db.query(
                 "UPDATE mikrotik_devices SET status = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
                 ["online", device.id],
@@ -250,6 +249,8 @@ publicRouter.get("/campus-map", async (req, res) => {
             } catch {
               liveStatus = "offline";
               await db.query("UPDATE mikrotik_devices SET status = ? WHERE id = ?", ["offline", device.id]);
+            } finally {
+              await client.close().catch(() => {});
             }
           } else {
             // Simulation mode

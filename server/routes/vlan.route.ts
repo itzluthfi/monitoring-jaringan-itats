@@ -34,12 +34,17 @@ vlanRouter.get('/:id/vlan-traffic', async (req, res) => {
       const promises = onlineDevices.map(async (device: any) => {
         try {
           const client = createMikrotikClient(device);
-          const api = await client.connect();
-          const [ifaces, vlansDetail] = await Promise.all([
-            (api as any).rosApi.write(["/interface/print", "=stats="]).catch(() => []),
-            (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => []),
-          ]);
-          await client.close();
+          let ifaces = [];
+          let vlansDetail = [];
+          try {
+            const api = await client.connect();
+            [ifaces, vlansDetail] = await Promise.all([
+              (api as any).rosApi.write(["/interface/print", "=stats="]).catch(() => []),
+              (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => []),
+            ]);
+          } finally {
+            await client.close().catch(() => {});
+          }
           const vlanNames = new Set((vlansDetail || []).map((v: any) => v.name));
           return (ifaces || [])
             .map((v: any) => ({ 
@@ -73,17 +78,9 @@ vlanRouter.get('/:id/vlan-traffic', async (req, res) => {
       })));
     }
 
-    let client;
-    let api;
+    const client = createMikrotikClient(device);
     try {
-      client = createMikrotikClient(device);
-      api = await client.connect();
-    } catch (connectErr: any) {
-      console.error(`[VlanTraffic] Failed to connect to ${device.name} (${device.host}):`, connectErr?.message || connectErr);
-      return res.json([]);
-    }
-
-    try {
+      const api = await client.connect();
       const [ifaces, vlansDetail] = await Promise.all([
         (api as any).rosApi.write(["/interface/print", "=stats="]).catch(() => []),
         (api as any).rosApi.write(["/interface/vlan/print"]).catch(() => [])
@@ -106,8 +103,6 @@ vlanRouter.get('/:id/vlan-traffic', async (req, res) => {
         });
       }
 
-      await client.close().catch(() => {});
-
       const monitorMap: Record<string, any> = {};
       if (Array.isArray(monitorResults)) {
         monitorResults.forEach((m: any) => {
@@ -127,8 +122,9 @@ vlanRouter.get('/:id/vlan-traffic', async (req, res) => {
       res.json(vlans);
     } catch (fetchErr: any) {
       console.error(`[VlanTraffic] Failed to fetch data from ${device.name}:`, fetchErr?.message || fetchErr);
-      await client.close().catch(() => {});
       res.json([]);
+    } finally {
+      await client.close().catch(() => {});
     }
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
