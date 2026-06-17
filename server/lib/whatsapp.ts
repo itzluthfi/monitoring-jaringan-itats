@@ -213,7 +213,10 @@ export async function sendWhatsAppMessageFromSession(sessionId: string, targetNu
   }
 }
 
-// Broadcast alert from any active connected source to all target numbers
+// Helper delay function
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Broadcast alert from active connected source to all target numbers (with Failover & Delay)
 export async function sendWhatsAppAlertBroadcast(title: string, message: string): Promise<boolean> {
   try {
     // 1. Fetch active targets
@@ -233,19 +236,48 @@ export async function sendWhatsAppAlertBroadcast(title: string, message: string)
       return false;
     }
 
-    // Use the first connected source for broadcast
-    const senderSessionId = connectedSources[0];
     let successCount = 0;
+    let senderIndex = 0; // Start with the first connected source
     
-    for (const target of targets) {
-      const success = await sendWhatsAppMessageFromSession(senderSessionId, target.phone_number, message);
-      if (success) successCount++;
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
+      let sent = false;
+      let attempts = 0;
+      
+      // Try to send using available active sources (Failover Loop)
+      while (!sent && attempts < connectedSources.length) {
+        const currentSenderId = connectedSources[senderIndex];
+        console.log(`[WhatsApp Broadcast] Attempting to send alert to ${target.phone_number} via sender ${currentSenderId}...`);
+        
+        const success = await sendWhatsAppMessageFromSession(currentSenderId, target.phone_number, message);
+        
+        if (success) {
+          sent = true;
+          successCount++;
+          console.log(`[WhatsApp Broadcast] Alert successfully sent to ${target.phone_number} via ${currentSenderId}`);
+        } else {
+          attempts++;
+          console.warn(`[WhatsApp Broadcast] Sender ${currentSenderId} failed to send to ${target.phone_number}. Trying failover...`);
+          // Shift to the next connected source
+          senderIndex = (senderIndex + 1) % connectedSources.length;
+        }
+      }
+
+      if (!sent) {
+        console.error(`[WhatsApp Broadcast] Failed to send alert to target ${target.phone_number} after trying all available gateways.`);
+      }
+
+      // Add a 1.5-second anti-spam delay between targets (except after the last one)
+      if (i < targets.length - 1) {
+        console.log(`[WhatsApp Broadcast] Sleeping for 1500ms to prevent spam flags...`);
+        await sleep(1500);
+      }
     }
 
-    console.log(`[WhatsApp Broadcast] Successfully sent alert to ${successCount}/${targets.length} targets via sender ${senderSessionId}`);
+    console.log(`[WhatsApp Broadcast] Completed. Successfully sent alert to ${successCount}/${targets.length} targets.`);
     return successCount > 0;
   } catch (err) {
-    console.error("[WhatsApp Broadcast] Error:", err);
+    console.error("[WhatsApp Broadcast] Error during broadcast execution:", err);
     return false;
   }
 }

@@ -367,6 +367,8 @@ Konfigurasi sistem lengkap dengan 5 tab:
 |---------|-----------|
 | Telegram Bot Token | Token bot Telegram |
 | Telegram Chat ID | ID chat/channel tujuan |
+| WhatsApp Sources CRUD | Kelola multi-gateway WhatsApp Web lokal (Baileys) dengan pemindaian QR Code |
+| WhatsApp Targets CRUD | Kelola multi-penerima notifikasi alert WhatsApp |
 | Backend Server URL | URL untuk koneksi mobile APK |
 
 #### Tab Security
@@ -416,6 +418,8 @@ Sistem menggunakan 14 tabel database dengan relasi sebagai berikut:
 | 12 | `tickets` | Tiket laporan masalah | Tiket |
 | 13 | `ticket_replies` | Reply/diskusi tiket | Tiket |
 | 14 | `migrations_history` | Track executed migrations | Sistem |
+| 15 | `whatsapp_sources` | Konfigurasi nomor pengirim (gateways Baileys) | Integrasi |
+| 16 | `whatsapp_targets` | Daftar penerima notifikasi alert WhatsApp | Integrasi |
 
 ### Relasi Antar Tabel
 
@@ -520,6 +524,24 @@ Lalu buka [http://localhost:3000](http://localhost:3000)
 > **Default Login Test:**
 > - Username: `admin`
 > - Password: `admin123`
+
+### 6. WhatsApp Web Lokal (Baileys) Setup
+
+Sistem ini mendukung integrasi WhatsApp Web lokal yang **100% gratis** menggunakan library `@whiskeysockets/baileys`.
+- **Nomor Sumber (Gateways)**:
+  1. Masuk ke halaman admin **Pengaturan -> Integrations**.
+  2. Klik **Tambah Pengirim** untuk menambahkan profil pengirim (contoh: "Gateway Utama").
+  3. Aktifkan checkbox **Aktif** untuk profil tersebut.
+  4. Klik **Hubungkan / Scan QR**. Sistem akan memunculkan pop-up modal berisi **QR Code**.
+  5. Buka WhatsApp di HP Anda -> Perangkat Tertaut -> Tautkan Perangkat, lalu scan QR Code tersebut.
+  6. Setelah berhasil tersambung, status otomatis berubah menjadi **Terhubung** di tabel.
+- **Nomor Tujuan (Penerima)**:
+  1. Klik **Tambah Penerima** di seksi nomor tujuan.
+  2. Masukkan nama (misal: "Admin Utama") dan nomor tujuan WhatsApp (misal: `6285607846889`).
+  3. Anda dapat menambah, mengedit, menghapus, atau menonaktifkan masing-masing nomor tujuan.
+- **Pengujian**:
+  1. Isi nomor dan pesan uji coba pada bagian **Kirim Pesan Uji Coba (Kustom)**, lalu klik tombol tersebut untuk memverifikasi.
+- **Keamanan Sesi**: Folder sesi tersimpan lokal di `server/wa_sessions/` dan telah ditambahkan ke `.gitignore` agar datanya aman.
 
 ---
 
