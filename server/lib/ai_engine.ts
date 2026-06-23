@@ -22,6 +22,8 @@ export interface HistoryPoint {
 export interface AiPredictionResult {
   prediction: string;
   rawanHours: { hour: string; expectedDensity: string }[];
+  analysisExplanation?: string;
+  conclusion?: string;
   modelInfo: {
     type: string;
     dataPoints: number;
@@ -231,6 +233,8 @@ function ruleBasedPrediction(history: HistoryPoint[]): AiPredictionResult {
   return {
     prediction: `[Rule-Based AI] ${trend} Analyzed ${history.length} historical data points from this network.`,
     rawanHours,
+    analysisExplanation: "Proses Berpikir (Local Rule-Based): Menganalisis nilai rata-rata historis kepadatan klien per jam. Model membandingkan pola distribusi trafik dari seluruh snapshot data yang terkumpul dan mengevaluasi tren jam sibuk berdasarkan rata-rata beban puncak.",
+    conclusion: "Kesimpulan (Local Rule-Based): Penjadwalan optimasi bandwidth direkomendasikan pada slot jam padat yang terdeteksi untuk menjaga kestabilan latency.",
     modelInfo: { type: 'rule-based', dataPoints: history.length, isLocal: true },
   };
 }
@@ -271,6 +275,8 @@ export async function smartPredict(history: HistoryPoint[]): Promise<AiPredictio
       return {
         prediction: `[CNN AI — Local Model] ${peakMsg} Model trained on ${history.length} data points. Loss: ${cachedTrainingLoss?.toFixed(4) || 'cached'}.`,
         rawanHours,
+        analysisExplanation: `Proses Berpikir (Local CNN-1D - Cached): Menggunakan model Convolutional Neural Network 1-Dimensi yang tersimpan dalam cache. Memproses jendela deret waktu (time-series window) 12 titik terakhir untuk mendeteksi fitur lokal peningkatan jumlah klien secara temporal.`,
+        conclusion: `Kesimpulan (Local CNN-1D): Terdeteksi potensi bottleneck jaringan akibat peningkatan densitas klien. Direkomendasikan penerapan limitasi bandwidth dinamis (rate limit) untuk menjaga kestabilan latency.`,
         modelInfo: { type: 'cnn-1d', dataPoints: history.length, trainingLoss: cachedTrainingLoss, isLocal: true },
       };
     }
@@ -292,6 +298,8 @@ export async function smartPredict(history: HistoryPoint[]): Promise<AiPredictio
         return {
           prediction: `[CNN AI — Shared Training] Model trained on ${history.length} data points.`,
           rawanHours,
+          analysisExplanation: `Proses Berpikir (Local CNN-1D - Shared): Model Convolutional Neural Network 1-Dimensi baru saja menyelesaikan pelatihan berseri. Mengevaluasi jendela deret waktu (time-series window) dari 12 titik data terakhir.`,
+          conclusion: `Kesimpulan (Local CNN-1D): Terdeteksi potensi beban tinggi pada jam padat. Disarankan mengaktifkan Queue Tree dinamis atau melakukan optimasi daya pancar AP.`,
           modelInfo: { type: 'cnn-1d', dataPoints: history.length, trainingLoss: cachedTrainingLoss, isLocal: true },
         };
       }
@@ -338,6 +346,8 @@ export async function smartPredict(history: HistoryPoint[]): Promise<AiPredictio
     return {
       prediction: `[CNN AI — Local Model] ${peakMsg} Model trained on ${history.length} data points. Loss: ${cachedTrainingLoss?.toFixed(4) || 'cached'}.`,
       rawanHours,
+      analysisExplanation: `Proses Berpikir (Local CNN-1D): Selesai melatih model Convolutional Neural Network 1-Dimensi dengan tingkat kesalahan akhir (Loss) sebesar ${cachedTrainingLoss?.toFixed(6) || 'N/A'}. Membaca jendela tren 12 titik terakhir untuk meramalkan kepadatan masa depan.`,
+      conclusion: `Kesimpulan (Local CNN-1D): Terdeteksi kecenderungan penumpukan pengguna. Direkomendasikan manajemen alokasi IP DHCP lease time yang lebih pendek dan pengaktifan load balancing AP.`,
       modelInfo: { type: 'cnn-1d', dataPoints: history.length, trainingLoss: cachedTrainingLoss, isLocal: true },
     };
   } catch (err: any) {

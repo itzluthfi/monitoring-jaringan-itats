@@ -234,6 +234,20 @@ export const initializeDB = async () => {
       )
     `);
 
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS system_ai_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        mode VARCHAR(50),
+        model VARCHAR(100),
+        status VARCHAR(20),
+        prompt TEXT,
+        response TEXT,
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+
 
     const [users]: any = await db.query('SELECT * FROM admin_users WHERE username = ?', ['admin']);
     if (users.length === 0) {

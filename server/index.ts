@@ -23,6 +23,7 @@ import { ticketsRouter } from './routes/tickets.route';
 import { requireAuth } from './middleware/auth';
 import { publicSecurityMiddleware } from './middleware/publicSecurity';
 import { whatsappRouter } from './routes/whatsapp.route';
+import { logsAiRouter } from './routes/logs_ai.route';
 import { initAllActiveWhatsAppSessions, sendWhatsAppAlertBroadcast } from './lib/whatsapp';
 
 dotenv.config();
@@ -80,6 +81,7 @@ app.use('/api', requireAuth, dashboardRouter);
 app.use("/api/notifications", requireAuth, notificationsRouter);
 app.use("/api/access-points", requireAuth, accessPointsRouter);
 app.use("/api/logs", requireAuth, logsRouter);
+app.use("/api/logs-ai", requireAuth, logsAiRouter);
 app.use("/api/settings", requireAuth, settingsRouter);
 app.use("/api/adapters", requireAuth, adapterRouter);
 app.use("/api/controllers", requireAuth, controllersRouter);
@@ -246,8 +248,12 @@ async function sendWhatsAppAlert(title: string, message: string, isCritical: boo
       return;
     }
 
+    // Sementara hilangkan IP Address untuk WhatsApp (komentari baris di bawah dan aktifkan baris kedua untuk mengembalikan IP)
+    const cleanMessage = message.replace(/\s?\(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\)/g, '');
+    // const cleanMessage = message; 
+
     const emoji = isCritical ? '🔴 *CRITICAL ALERT*' : '🟢 *RECOVERY*';
-    const text = `${emoji}\n\n*${title}*\n${message}`;
+    const text = `${emoji}\n\n*${title}*\n${cleanMessage}`;
     
     if (shouldBounceAlert('whatsapp', 'broadcast_group', text)) return;
 
@@ -598,6 +604,7 @@ setInterval(async () => {
     const [[retention]]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = ?", ['log_retention_days']).catch(() => [[{ key_value: '30' }]]);
     const days = parseInt(retention?.key_value || '30');
     const [delResult]: any = await db.query(`DELETE FROM mikrotik_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)`, [days]);
+    await db.query(`DELETE FROM system_ai_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)`, [days]).catch(() => {});
     
     if (delResult.affectedRows > 0) {
       console.log(`[Log-Archive] 🗑️ Auto-cleanup: Removed ${delResult.affectedRows} logs older than ${days} days.`);

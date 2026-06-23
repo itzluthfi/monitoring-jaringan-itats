@@ -15,7 +15,8 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const EXTENDED_TIMEOUT_MAP: Record<string, number> = {
   '/api/topology/dynamic': 180_000,   // ditingkatkan jadi 3 menit (sebelumnya 90s)
   '/api/topology/clients/all': 180_000,
-  '/api/prediction': 30_000,
+  '/api/prediction': 90_000,          // ditingkatkan jadi 90 detik untuk LLM
+  '/api/logs-ai': 90_000,             // ditingkatkan jadi 90 detik untuk LLM logs chat
   '/api/current-status': 25_000,
 };
 

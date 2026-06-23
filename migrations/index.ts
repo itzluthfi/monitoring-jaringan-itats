@@ -36,6 +36,7 @@ import { migration_011 } from './011_create_network_controllers.js';
 import { migration_012 } from './012_create_tickets.js';
 import { migration_013 } from './013_create_ticket_replies.js';
 import { migration_014 } from './014_seed_default_data.js';
+import { migration_015 } from './015_create_system_ai_logs.js';
 
 export const migrations: Migration[] = [
   migration_001,
@@ -52,6 +53,7 @@ export const migrations: Migration[] = [
   migration_012,
   migration_013,
   migration_014,
+  migration_015,
 ];
 
 export const getMigrationTableName = () => 'migrations_history';

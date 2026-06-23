@@ -498,6 +498,7 @@ export function TopologyView() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showOfflineModal, setShowOfflineModal] = useState(false);
+  const [dismissedOfflineCount, setDismissedOfflineCount] = useState<number>(0);
   const [isLegendOpen, setIsLegendOpen] = useState(true);
   const [topologySearch, setTopologySearch] = useState('');
   const [searchMatches, setSearchMatches] = useState<TopologyNode[]>([]);
@@ -643,6 +644,12 @@ export function TopologyView() {
     return nodes;
   }, [allRouters]);
 
+  useEffect(() => {
+    if (offlineNodes.length === 0) {
+      setDismissedOfflineCount(0);
+    }
+  }, [offlineNodes.length]);
+
   return (
     <div className={`flex flex-col overflow-hidden animate-in fade-in duration-500 bg-zinc-950 ${isFullscreen ? 'fixed inset-0 z-[100]' : 'h-[calc(100vh-64px)]'}`}>
 
@@ -781,18 +788,27 @@ export function TopologyView() {
         )}
       </div>
 
-      {offlineNodes.length > 0 && (
-        <div className="flex-shrink-0 bg-red-950/40 border-b border-red-900/50 px-5 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-red-400 font-medium">
+      {offlineNodes.length > 0 && offlineNodes.length !== dismissedOfflineCount && (
+        <div className="flex-shrink-0 bg-red-950/40 border-b border-red-900/50 px-5 py-2 flex items-center justify-between [[data-theme=light]_\&]:bg-white [[data-theme=light]_\&]:border-red-200 shadow-sm">
+          <div className="flex items-center gap-2 text-sm text-red-400 font-medium [[data-theme=light]_\&]:text-red-600">
             <AlertCircle className="w-4 h-4" />
             <span>Terdeteksi {offlineNodes.length} node jaringan sedang offline.</span>
           </div>
-          <button 
-            onClick={() => setShowOfflineModal(true)}
-            className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-1.5 rounded-lg border border-red-500/30 transition-colors font-bold"
-          >
-            Lihat Detail
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setShowOfflineModal(true)}
+              className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-1.5 rounded-lg border border-red-500/30 transition-colors font-bold [[data-theme=light]_\&]:bg-red-50 [[data-theme=light]_\&]:hover:bg-red-100 [[data-theme=light]_\&]:text-red-700 [[data-theme=light]_\&]:border-red-200"
+            >
+              Lihat Detail
+            </button>
+            <button
+              onClick={() => setDismissedOfflineCount(offlineNodes.length)}
+              className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-400 hover:text-red-300 transition-colors [[data-theme=light]_\&]:text-red-600 [[data-theme=light]_\&]:hover:bg-red-50 [[data-theme=light]_\&]:hover:text-red-700"
+              title="Sembunyikan"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 

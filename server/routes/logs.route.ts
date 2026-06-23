@@ -1,8 +1,121 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { GoogleGenAI } from '@google/genai';
 
 export const logsRouter = Router();
+
+logsRouter.get('/export-report', requireAuth, async (req, res) => {
+  try {
+    const { preset, startDate, endDate, device_id, topics, search, grouped = 'false' } = req.query;
+    const isGrouped = grouped === 'true';
+
+    let finalStartDate = startDate as string;
+    let finalEndDate = endDate as string;
+
+    const now = new Date();
+    if (preset === '7') {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      finalStartDate = sevenDaysAgo.toISOString().split('T')[0] + ' 00:00:00';
+      finalEndDate = now.toISOString().split('T')[0] + ' 23:59:59';
+    } else if (preset === '30') {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      finalStartDate = thirtyDaysAgo.toISOString().split('T')[0] + ' 00:00:00';
+      finalEndDate = now.toISOString().split('T')[0] + ' 23:59:59';
+    } else {
+      if (!finalStartDate) {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        finalStartDate = thirtyDaysAgo.toISOString().split('T')[0] + ' 00:00:00';
+      } else {
+        finalStartDate = finalStartDate.replace('T', ' ');
+      }
+      if (!finalEndDate) {
+        finalEndDate = now.toISOString().split('T')[0] + ' 23:59:59';
+      } else {
+        finalEndDate = finalEndDate.replace('T', ' ');
+      }
+    }
+
+    let baseWhere = "WHERE l.created_at BETWEEN ? AND ?";
+    const queryParams: any[] = [finalStartDate, finalEndDate];
+
+    if (device_id) {
+      baseWhere += " AND l.device_id = ?";
+      queryParams.push(device_id);
+    }
+    if (topics) {
+      baseWhere += " AND l.topics LIKE ?";
+      queryParams.push(`%${topics}%`);
+    }
+    if (search) {
+      baseWhere += " AND l.message LIKE ?";
+      queryParams.push(`%${search}%`);
+    }
+
+    const [[countResult]]: any = await db.query(`SELECT COUNT(*) as total FROM mikrotik_logs l ${baseWhere}`, queryParams);
+    const totalCount = countResult?.total || 0;
+
+    const [topicStats]: any = await db.query(`
+      SELECT l.topics, COUNT(*) as count 
+      FROM mikrotik_logs l 
+      ${baseWhere} 
+      GROUP BY l.topics
+    `, queryParams);
+
+    const [topErrors]: any = await db.query(`
+      SELECT l.message, COUNT(*) as count 
+      FROM mikrotik_logs l 
+      ${baseWhere} AND (l.topics LIKE '%error%' OR l.topics LIKE '%critical%' OR l.topics LIKE '%warning%')
+      GROUP BY l.message 
+      ORDER BY count DESC 
+      LIMIT 15
+    `, queryParams);
+
+    let logsQuery = "";
+    if (isGrouped) {
+      logsQuery = `
+        SELECT 
+          l.message, 
+          l.topics, 
+          l.device_id,
+          d.name as device_name,
+          COUNT(*) as occurrences,
+          MAX(l.created_at) as last_seen,
+          MIN(l.created_at) as first_seen
+        FROM mikrotik_logs l 
+        LEFT JOIN mikrotik_devices d ON l.device_id = d.id 
+        ${baseWhere}
+        GROUP BY l.device_id, d.name, l.message, l.topics
+        ORDER BY last_seen DESC
+        LIMIT 1000
+      `;
+    } else {
+      logsQuery = `
+        SELECT l.*, d.name as device_name 
+        FROM mikrotik_logs l 
+        LEFT JOIN mikrotik_devices d ON l.device_id = d.id
+        ${baseWhere}
+        ORDER BY l.id DESC
+        LIMIT 1000
+      `;
+    }
+
+    const [allLogs]: any = await db.query(logsQuery, queryParams);
+
+    res.json({
+      startDate: finalStartDate,
+      endDate: finalEndDate,
+      totalLogs: totalCount,
+      topicStats,
+      topErrors,
+      logs: allLogs
+    });
+
+  } catch (err) {
+    console.error("Export report error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
 
 logsRouter.get('/', requireAuth, async (req, res) => {
   try {

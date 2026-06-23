@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   Settings as SettingsIcon, Save, Shield, BrainCircuit, Trash2, Clock, Globe, Moon, Sun,
   Volume2, Play, MessageSquare, Plus, Check, Activity, Link2, User, UserPlus, Eye, EyeOff,
-  MailCheck, KeyRound, Pencil, UserX, RefreshCw, Lock, BookOpen, Smartphone
+  MailCheck, KeyRound, Pencil, UserX, RefreshCw, Lock, BookOpen, Smartphone, X
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { authFetch } from '../lib/authFetch';
@@ -10,6 +10,7 @@ import { Loader } from '../components/common/Loader';
 import { useLanguage } from '../i18n/LanguageContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface AdminUser {
@@ -33,6 +34,7 @@ interface SoundEntry {
 const TABS = [
   { id: 'general',      label: 'General',      icon: SettingsIcon }, // Will be translated in render
   { id: 'monitoring',   label: 'Monitoring',   icon: Activity },
+  { id: 'ai',           label: 'AI Settings',  icon: BrainCircuit },
   { id: 'audio',        label: 'Audio',        icon: Volume2 },
   { id: 'integrations', label: 'Integrations', icon: Link2 },
   { id: 'security',     label: 'Security',     icon: Shield },
@@ -62,8 +64,26 @@ export function SettingsView() {
 
   // ── Monitoring state ──
   const [aiEnabled, setAiEnabled]         = useState(true);
+  const [aiMode, setAiMode]               = useState('llm');
+  const [aiLlmModel, setAiLlmModel]       = useState('meta/llama-3.3-70b-instruct');
+  const [nvidiaApiKey, setNvidiaApiKey]   = useState('');
   const [retentionDays, setRetentionDays] = useState(30);
   const [simulationMode, setSimulationMode] = useState(false);
+  const [aiLogs, setAiLogs] = useState<any[]>([]);
+  const [loadingAiLogs, setLoadingAiLogs] = useState(false);
+  const [selectedAiLog, setSelectedAiLog] = useState<any | null>(null);
+
+  const PRESET_MODELS = [
+    'meta/llama-3.3-70b-instruct',
+    'deepseek-ai/deepseek-v4-flash',
+    'google/gemma-3-12b-it',
+    'meta/llama-3.1-8b-instruct',
+    'meta/llama-3.1-70b-instruct',
+    'microsoft/phi-4-mini-instruct'
+  ];
+  const [modelSelect, setModelSelect] = useState('meta/llama-3.3-70b-instruct');
+
+
 
   // ── Audio state ──
   const [notificationSounds, setNotificationSounds] = useState<SoundEntry[]>([]);
@@ -355,7 +375,7 @@ export function SettingsView() {
   // ─── Fetch all settings ─────────────────────────────────────────────────────
   const fetchSettings = useCallback(async () => {
     try {
-      const [aiRes, retRes, soundRes, teleEnabledRes, teleTokenRes, teleChatRes, waEnabledRes, simRes] = await Promise.all([
+      const [aiRes, retRes, soundRes, teleEnabledRes, teleTokenRes, teleChatRes, waEnabledRes, simRes, aiModeRes, aiLlmRes, nvKeyRes] = await Promise.all([
         authFetch('/api/settings/ai_analysis_enabled'),
         authFetch('/api/settings/log_retention_days'),
         authFetch('/api/settings/notification_sounds'),
@@ -364,6 +384,9 @@ export function SettingsView() {
         authFetch('/api/settings/telegram_chat_id'),
         authFetch('/api/settings/wa_enabled'),
         authFetch('/api/settings/simulation_mode'),
+        authFetch('/api/settings/ai_mode'),
+        authFetch('/api/settings/ai_llm_model'),
+        authFetch('/api/settings/nvidia_api_key'),
       ]);
       if (aiRes.ok)          setAiEnabled((await aiRes.json()).value !== 'false');
       if (retRes.ok)         setRetentionDays(parseInt((await retRes.json()).value || '30'));
@@ -373,6 +396,13 @@ export function SettingsView() {
       if (teleChatRes.ok)    setTelegramChatId((await teleChatRes.json()).value || '');
       if (waEnabledRes.ok)   setWaEnabled((await waEnabledRes.json()).value === 'true');
       if (simRes.ok)         setSimulationMode((await simRes.json()).value === 'true');
+      if (aiModeRes.ok)      setAiMode((await aiModeRes.json()).value || 'llm');
+      if (aiLlmRes.ok) {
+        const m = (await aiLlmRes.json()).value || 'meta/llama-3.3-70b-instruct';
+        setAiLlmModel(m);
+        setModelSelect(PRESET_MODELS.includes(m) ? m : 'custom');
+      }
+      if (nvKeyRes.ok)       setNvidiaApiKey((await nvKeyRes.json()).value || '');
       const lp = localStorage.getItem('notification_polling');
       if (lp) setPollingRate(parseInt(lp));
     } catch (err) {
@@ -392,8 +422,20 @@ export function SettingsView() {
     }
   }, []);
 
+  const fetchAiLogs = useCallback(async () => {
+    setLoadingAiLogs(true);
+    try {
+      const res = await authFetch('/api/ai-logs');
+      if (res.ok) setAiLogs(await res.json());
+    } catch { /* handled */ } finally {
+      setLoadingAiLogs(false);
+    }
+  }, []);
+
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
   useEffect(() => { if (activeTab === 'security') fetchAdmins(); }, [activeTab, fetchAdmins]);
+  useEffect(() => { if (activeTab === 'ai' && aiEnabled) fetchAiLogs(); }, [activeTab, aiEnabled, fetchAiLogs]);
+
 
   const switchTab = (id: TabId) => {
     setActiveTab(id);
@@ -453,6 +495,9 @@ export function SettingsView() {
         post('wa_enabled', String(waEnabled)),
         post('simulation_mode', String(simulationMode)),
         post('app_language', appLanguage),
+        post('ai_mode', aiMode),
+        post('ai_llm_model', aiLlmModel),
+        post('nvidia_api_key', nvidiaApiKey),
       ]);
       // Apply language change
       await changeLanguage(appLanguage);
@@ -617,7 +662,7 @@ export function SettingsView() {
                 : 'text-zinc-400 hover:text-white hover:bg-white/5'
               }`}
           >
-            <Icon className="w-4 h-4" /> {id === 'general' ? t('settings.general') : id === 'monitoring' ? t('settings.monitoring') : id === 'audio' ? t('settings.audio') : id === 'integrations' ? t('settings.integrations') : t('settings.security')}
+            <Icon className="w-4 h-4" /> {id === 'general' ? t('settings.general') : id === 'monitoring' ? t('settings.monitoring') : id === 'ai' ? 'Nexus AI' : id === 'audio' ? t('settings.audio') : id === 'integrations' ? t('settings.integrations') : t('settings.security')}
             {id === 'security' && admins.length > 0 && (
               <span className="ml-1 bg-white/20 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{admins.filter(a => a.is_active).length}</span>
             )}
@@ -625,7 +670,7 @@ export function SettingsView() {
         ))}
       </div>
 
-      <div className="max-w-3xl">
+      <div className={activeTab === 'ai' ? "w-full max-w-7xl" : "max-w-3xl"}>
         {/* ── TAB: GENERAL ─────────────────────────────────────────────────────── */}
         {activeTab === 'general' && (
           <div className="bg-zinc-900/50 border border-white/10 rounded-3xl p-6 shadow-xl space-y-6">
@@ -667,15 +712,6 @@ export function SettingsView() {
         {/* ── TAB: MONITORING ───────────────────────────────────────────────────── */}
         {activeTab === 'monitoring' && (
           <div className="bg-zinc-900/50 border border-white/10 rounded-3xl p-6 shadow-xl space-y-6">
-            <SectionTitle icon={BrainCircuit} color="text-purple-400" label="AI Monitoring Engine" />
-            <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-              <div>
-                <p className="text-sm font-bold text-white">Nexus Intelligence Analytics</p>
-                <p className="text-xs text-zinc-500 mt-0.5">Prediksi kemacetan trafik & generate insight.</p>
-              </div>
-              <Toggle value={aiEnabled} onChange={() => setAiEnabled(!aiEnabled)} />
-            </div>
-
             <div>
               <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest block mb-2">Telemetry Retention Policy</label>
               <div className="flex items-center gap-4">
@@ -702,6 +738,196 @@ export function SettingsView() {
               <button onClick={flushLogs} className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 text-zinc-400 rounded-xl hover:bg-rose-500 hover:text-white border border-white/5 font-bold text-xs transition-all">
                 <Trash2 className="w-4 h-4" /> Flush MikroTik Logs
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB: NEXUS AI ──────────────────────────────────────────────────────── */}
+        {activeTab === 'ai' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column: AI Monitoring Engine configuration (5 cols) */}
+            <div className="lg:col-span-5 bg-zinc-900/50 border border-white/10 rounded-3xl p-6 shadow-xl space-y-6">
+              <SectionTitle icon={BrainCircuit} color="text-purple-400" label="AI Monitoring Engine" />
+              
+              <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                <div>
+                  <p className="text-sm font-bold text-white">Nexus Intelligence Analytics</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">Prediksi kemacetan trafik & generate insight.</p>
+                </div>
+                <Toggle value={aiEnabled} onChange={() => setAiEnabled(!aiEnabled)} />
+              </div>
+
+              {aiEnabled && (
+                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-2">Model Mode</label>
+                    <div className="relative">
+                      <select
+                        value={aiMode}
+                        onChange={(e) => setAiMode(e.target.value)}
+                        className={`${inputCls} appearance-none`}
+                      >
+                        <option value="llm">LLM AI (Cloud / DeepSeek NVIDIA NIM)</option>
+                        <option value="tensorflow">Local AI (TensorFlow.js CNN-1D Model)</option>
+                      </select>
+                    </div>
+                    <p className="text-[10px] text-zinc-500 mt-1.5 leading-relaxed font-semibold">
+                      {aiMode === 'llm' 
+                        ? 'Menggunakan model LLM di cloud (NVIDIA NIM DeepSeek) untuk menganalisis data telemetri secara deskriptif.' 
+                        : 'Menggunakan model CNN-1D lokal yang dilatih secara dinamis pada browser/server Anda.'}
+                    </p>
+                  </div>
+
+                  {aiMode === 'llm' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-4 pt-4 border-t border-white/5"
+                    >
+                      <div>
+                        <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-2">NVIDIA NIM Model</label>
+                        <div className="relative mb-3">
+                          <select
+                            value={modelSelect}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setModelSelect(val);
+                              if (val !== 'custom') {
+                                setAiLlmModel(val);
+                              }
+                            }}
+                            className={`${inputCls} appearance-none`}
+                          >
+                            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct (General - Fast & Free tier)</option>
+                            <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4 Flash (Very Fast & Efficient - Free tier)</option>
+                            <option value="google/gemma-3-12b-it">Gemma 3 12B Instruct (Smart & Free tier)</option>
+                            <option value="meta/llama-3.1-8b-instruct">Llama 3.1 8B Instruct (Lightweight & Low Credit Cost)</option>
+                            <option value="meta/llama-3.1-70b-instruct">Llama 3.1 70B Instruct (Stable & Free tier)</option>
+                            <option value="microsoft/phi-4-mini-instruct">Phi 4 Mini Instruct (Lightweight & Fast - Free tier)</option>
+                            <option value="custom">Model Lain / Kustom (Tulis Manual)</option>
+                          </select>
+                        </div>
+
+                        {modelSelect === 'custom' && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                          >
+                            <input
+                              type="text"
+                              value={aiLlmModel}
+                              onChange={(e) => setAiLlmModel(e.target.value)}
+                              placeholder="Ketik nama model NVIDIA NIM..."
+                              className={inputCls}
+                            />
+                          </motion.div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-2">NVIDIA API Key</label>
+                        <input
+                          type="password"
+                          value={nvidiaApiKey}
+                          onChange={(e) => setNvidiaApiKey(e.target.value)}
+                          placeholder="nvapi-..."
+                          className={inputCls}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              )}
+
+              <div className="pt-2">
+                <SaveButton />
+              </div>
+            </div>
+
+            {/* Right Column: Riwayat Aktivitas & Log AI (7 cols) */}
+            <div className="lg:col-span-7 bg-zinc-900/50 border border-white/10 rounded-3xl p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-indigo-400 animate-pulse" />
+                  <h3 className="text-base font-bold text-white">Riwayat Aktivitas & Log AI</h3>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={fetchAiLogs}
+                  disabled={loadingAiLogs}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 rounded-xl border border-indigo-500/20 text-[10px] font-bold uppercase transition-all cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingAiLogs ? 'animate-spin' : ''}`} />
+                  {loadingAiLogs ? 'Memuat...' : 'Refresh Log'}
+                </button>
+              </div>
+
+              {!aiEnabled ? (
+                <div className="p-8 text-center bg-black/10 border border-white/5 rounded-2xl">
+                  <BrainCircuit className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-500 font-semibold">Aktifkan Nexus Intelligence Analytics terlebih dahulu untuk mencatat log aktivitas.</p>
+                </div>
+              ) : aiLogs.length === 0 ? (
+                <div className="p-8 text-center bg-black/10 border border-white/5 rounded-2xl">
+                  <Activity className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-500 font-semibold">Belum ada riwayat aktivitas prediksi AI yang tercatat.</p>
+                </div>
+              ) : (
+                <div className="border border-white/5 rounded-2xl overflow-hidden bg-zinc-950/20 shadow-inner">
+                  <div className="max-h-[460px] overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-zinc-950/60 border-b border-white/5 text-zinc-500 font-mono text-[9px] uppercase tracking-wider">
+                          <th className="p-3 w-28">Waktu</th>
+                          <th className="p-3">Model Engine</th>
+                          <th className="p-3 w-16 text-center">Status</th>
+                          <th className="p-3 text-center w-20">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {aiLogs.map((log: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-white/5 transition-colors">
+                            <td className="p-3 text-zinc-500 font-mono text-[10px]">
+                              {new Date(log.created_at).toLocaleString('id-ID', {
+                                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                                day: '2-digit', month: '2-digit'
+                              })}
+                            </td>
+                            <td className="p-3 font-mono text-zinc-300 truncate max-w-[150px] text-[11px]" title={log.model}>
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold mr-1.5 uppercase ${
+                                log.mode === 'llm' 
+                                  ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' 
+                                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              }`}>
+                                {log.mode}
+                              </span>
+                              {log.model}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full font-mono text-[9px] font-bold ${
+                                log.status === 'success' 
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                              }`}>
+                                {log.status.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAiLog(log)}
+                                className="px-2.5 py-1 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 font-bold rounded-lg border border-indigo-500/10 text-[10px] transition-all cursor-pointer"
+                              >
+                                Detail
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1364,6 +1590,85 @@ export function SettingsView() {
           </div>
         </div>
       </div>
+
+      {/* AI Log Detail Modal */}
+      <AnimatePresence>
+        {selectedAiLog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
+            >
+              <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/40">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold font-mono ${selectedAiLog.mode === 'llm' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                      {selectedAiLog.mode.toUpperCase()}
+                    </span>
+                    Detail Aktivitas & Log AI
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 mt-1 font-mono">{new Date(selectedAiLog.created_at).toLocaleString('id-ID')}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedAiLog(null)}
+                  className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-4 custom-scrollbar text-xs">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 bg-zinc-950/40 border border-zinc-800/80 rounded-xl">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Model Engine</p>
+                    <p className="text-sm font-semibold text-zinc-200 mt-0.5 font-mono">{selectedAiLog.model}</p>
+                  </div>
+                  <div className="p-3 bg-zinc-950/40 border border-zinc-800/80 rounded-xl">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Status Eksekusi</p>
+                    <span className={`inline-block px-2 py-0.5 mt-1 rounded-full font-mono text-[10px] font-bold ${selectedAiLog.status === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                      {selectedAiLog.status.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold mb-1.5">Prompt / Request Input</p>
+                  <pre className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-2xl font-mono text-[10px] text-zinc-300 whitespace-pre-wrap max-h-[160px] overflow-y-auto custom-scrollbar">
+                    {selectedAiLog.prompt || '-'}
+                  </pre>
+                </div>
+
+                {selectedAiLog.status === 'success' ? (
+                  <div>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold mb-1.5">Model Response / Output</p>
+                    <pre className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-2xl font-mono text-[10px] text-indigo-300 whitespace-pre-wrap max-h-[220px] overflow-y-auto custom-scrollbar">
+                      {selectedAiLog.response || '-'}
+                    </pre>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-[10px] text-rose-400 uppercase tracking-wider font-bold mb-1.5">Error Message</p>
+                    <div className="p-3.5 bg-rose-500/5 border border-rose-500/20 rounded-2xl font-mono text-[10px] text-rose-400 whitespace-pre-wrap">
+                      {selectedAiLog.error_message || '-'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-zinc-950/40 border-t border-zinc-800 flex justify-end">
+                <button
+                  onClick={() => setSelectedAiLog(null)}
+                  className="px-5 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

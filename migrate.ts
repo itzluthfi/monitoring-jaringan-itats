@@ -97,6 +97,7 @@ async function loadMigrations(): Promise<any[]> {
     './migrations/012_create_tickets.js',
     './migrations/013_create_ticket_replies.js',
     './migrations/014_seed_default_data.js',
+    './migrations/015_create_system_ai_logs.js',
   ];
 
   const migrations = [];

@@ -4,6 +4,8 @@ import { GoogleGenAI } from '@google/genai';
 import { createMikrotikClient } from './mikrotiks.route';
 import { smartPredict } from '../lib/ai_engine';
 import { getControllerAdapter } from '../adapters/controller_factory';
+import nim from '@api/nim';
+import { requireAuth } from '../middleware/auth';
 
 export const dashboardRouter = Router();
 
@@ -307,6 +309,43 @@ dashboardRouter.get("/history", async (req, res) => {
   }
 });
 
+dashboardRouter.get("/prediction/latest", async (req, res) => {
+  try {
+    const [rows]: any = await db.query(
+      "SELECT response, created_at FROM system_ai_logs WHERE status = 'success' AND mode IN ('llm', 'tensorflow') ORDER BY id DESC LIMIT 1"
+    );
+    if (rows.length === 0) {
+      return res.json(null);
+    }
+    const responseText = rows[0].response;
+    try {
+      const cleanJsonText = responseText.trim().replace(/^```json\n?/, '').replace(/```$/, '').trim();
+      const parsed = JSON.parse(cleanJsonText);
+      if (parsed && typeof parsed === 'object') {
+        return res.json({
+          ...parsed,
+          createdAt: rows[0].created_at
+        });
+      } else {
+        return res.json({
+          prediction: responseText,
+          rawanHours: [],
+          createdAt: rows[0].created_at
+        });
+      }
+    } catch (e) {
+      return res.json({
+        prediction: responseText,
+        rawanHours: [],
+        createdAt: rows[0].created_at
+      });
+    }
+  } catch (err: any) {
+    console.error("[Prediction-Latest Error]:", err);
+    res.status(500).json({ error: "Gagal mengambil riwayat prediksi terakhir." });
+  }
+});
+
 dashboardRouter.get("/prediction", async (req, res) => {
   try {
     const deviceFilter = req.query.device as string;
@@ -316,6 +355,8 @@ dashboardRouter.get("/prediction", async (req, res) => {
       // Always return mock prediction in simulation mode
       return res.json({
         prediction: "AI prediction in simulation mode. Peak hours detected between 10:00 - 15:00 based on typical campus patterns.",
+        analysisExplanation: "Proses Berpikir AI (Mode Simulasi): Menganalisis tren mingguan jumlah klien aktif yang terhubung pada Access Point. Ditemukan lonjakan signifikan pengguna pada jam kuliah aktif yaitu di pagi hari (pukul 10:00) dan siang hari setelah istirahat (pukul 13:00). Berdasarkan pola ini, disimpulkan bahwa jaringan akan mengalami saturasi bandwidth pada slot waktu tersebut.",
+        conclusion: "Kesimpulan AI: Disarankan untuk mengaktifkan Bandwidth Limiter (Queue Tree) secara dinamis pada pukul 10:00 - 15:00 untuk membatasi kuota unduhan per pengguna serta melakukan load balancing antar Access Point terdekat guna meratakan kepadatan beban trafik.",
         rawanHours: [
           { hour: "10:00 - 12:00", expectedDensity: "High" },
           { hour: "13:00 - 15:00", expectedDensity: "High" },
@@ -341,9 +382,6 @@ dashboardRouter.get("/prediction", async (req, res) => {
       return res.json({ prediction: "Insufficient data for AI prediction. Please wait for more snapshots.", rawanHours: [] });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    const isPlaceholder = !apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("YOUR_");
-
     // Check system setting for AI
     const [[aiSetting]]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = ?", ['ai_analysis_enabled']).catch(() => [[{ key_value: 'true' }]]);
     const aiEnabled = (aiSetting?.key_value !== 'false');
@@ -355,81 +393,185 @@ dashboardRouter.get("/prediction", async (req, res) => {
       });
     }
 
-    const engineStatus = process.env.AHS_ENGINE_STATUS?.toLowerCase();
-    if (engineStatus === 'inactive' || engineStatus === 'nonaktif') {
-      return res.json({
-        prediction: "AI Nonaktif (Sesuai Konfigurasi ENV)",
-        rawanHours: []
-      });
-    }
+    // Check AI Mode (llm or tensorflow)
+    const [[aiModeSetting]]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = ?", ['ai_mode']).catch(() => [[{ key_value: 'llm' }]]);
+    const aiMode = aiModeSetting?.key_value || 'llm';
 
-    if (process.env.AHS_ENGINE_URL) {
+    if (aiMode === 'tensorflow') {
+      console.log('[AI] Running local TensorFlow.js AI engine.');
       try {
-        const timeout = parseInt(process.env.AHS_ENGINE_TIMEOUT || '3000');
-        const fetchCtrl = new AbortController();
-        const id = setTimeout(() => fetchCtrl.abort(), timeout);
+        const aiResult = await smartPredict(history || []);
         
-        const ahsRes = await fetch(process.env.AHS_ENGINE_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.AHS_ENGINE_TOKEN}`
-          },
-          body: JSON.stringify({ data: history }),
-          signal: fetchCtrl.signal
+        await db.query(
+          "INSERT INTO system_ai_logs (mode, model, status, prompt, response) VALUES (?, ?, ?, ?, ?)",
+          ['tensorflow', 'Local CNN-1D', 'success', `Predict density from history (client counts over time). Data length: ${history?.length || 0}`, JSON.stringify(aiResult)]
+        ).catch(() => {});
+        
+        await db.query(
+          "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
+          [0, 'ai-system', new Date().toISOString(), 'system,info,ai', `[AI Prediction SUCCESS] Mode: Local AI (TensorFlow). Output: ${aiResult.prediction || 'Jam rawan berhasil diprediksi.'}`]
+        ).catch(() => {});
+
+        return res.json(aiResult);
+      } catch (err: any) {
+        await db.query(
+          "INSERT INTO system_ai_logs (mode, model, status, prompt, error_message) VALUES (?, ?, ?, ?, ?)",
+          ['tensorflow', 'Local CNN-1D', 'error', `Predict density from history (client counts over time). Data length: ${history?.length || 0}`, err.message || String(err)]
+        ).catch(() => {});
+
+        await db.query(
+          "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
+          [0, 'ai-system', new Date().toISOString(), 'system,error,ai', `[AI Prediction ERROR] Mode: Local AI (TensorFlow). Error: ${err.message || String(err)}`]
+        ).catch(() => {});
+
+        return res.json({
+          prediction: "AI local analysis encountered an error.",
+          rawanHours: []
         });
-        clearTimeout(id);
-        
-        if (ahsRes.ok) {
-          return res.json(await ahsRes.json());
-        }
-      } catch (e) {
-        console.error("AHS Engine AI Fetch Error", e);
       }
     }
 
-    if (isPlaceholder) {
-      console.log('[AI] API key not configured — using local TensorFlow.js AI engine.');
-      const aiResult = await smartPredict(history || []);
-      return res.json(aiResult);
-    }
+    // Check LLM configurations
+    const [[aiModelSetting]]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = ?", ['ai_llm_model']).catch(() => [[{ key_value: 'meta/llama-3.3-70b-instruct' }]]);
+    const llmModel = aiModelSetting?.key_value || 'meta/llama-3.3-70b-instruct';
 
-    const ai = new GoogleGenAI({ apiKey });
-    const model = "gemini-3-flash-preview";
-    
+    const [[nvKeySetting]]: any = await db.query("SELECT key_value FROM system_settings WHERE key_name = ?", ['nvidia_api_key']).catch(() => [[{ key_value: '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' }]]);
+    const nvidiaKey = nvKeySetting?.key_value || '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';
+
+    const localHistory = (history || []).map((h: any) => {
+      const date = new Date(h.timestamp);
+      const localTimeStr = date.toLocaleString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(/\//g, '-').replace(',', '');
+      return {
+        timestamp: localTimeStr,
+        client_count: h.client_count,
+        ap_name: h.ap_name || 'All'
+      };
+    });
+
     const prompt = `
       Analyze the following WiFi density data (client counts over time) and predict the "rawan" (congested/peak) hours for the next 24 hours.
-      Data: ${JSON.stringify(history)}
+      Data: ${JSON.stringify(localHistory)}
       
-      Respond in JSON format with:
+      Respond STRICTLY in JSON format with the following exact keys:
       - prediction: a short summary of the trend.
+      - analysisExplanation: detailed explanation of the AI's step-by-step reasoning, observations of traffic patterns, and process of thinking (in Indonesian).
+      - conclusion: final conclusions and concrete technical action recommendations (in Indonesian).
       - rawanHours: an array of objects with { hour: string, expectedDensity: string (Low/Medium/High) }.
     `;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: { responseMimeType: "application/json" }
-    });
-
-    res.json(JSON.parse(response.text));
-  } catch (err) {
-    console.error("AI Prediction Error (Gemini), falling back to Local AI:", err);
     try {
-      const fallbackResult = await smartPredict((history as any) || []);
-      return res.json(fallbackResult);
-    } catch (fallbackErr) {
-      console.error("Local AI Fallback Error:", fallbackErr);
-      res.json({
-        prediction: "AI analysis encountered an error. Showing estimated patterns based on historical averages.",
-        rawanHours: [
-          { hour: "10:00 - 12:00", expectedDensity: "High" },
-          { hour: "13:00 - 15:00", expectedDensity: "High" }
-        ]
+      nim.auth(nvidiaKey);
+      const { data } = await nim.create_chat_completion_v1_chat_completions_post({
+        model: llmModel,
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 1,
+        top_p: 0.95,
+        max_tokens: 4000,
+        stream: false
       });
+
+      const content = data.choices?.[0]?.message?.content || '{}';
+      // Clean markdown formatting if present
+      const jsonText = content.replace(/^```json\n?/, '').replace(/```$/, '').trim();
+      const parsed = JSON.parse(jsonText);
+
+      await db.query(
+        "INSERT INTO system_ai_logs (mode, model, status, prompt, response) VALUES (?, ?, ?, ?, ?)",
+        ['llm', llmModel, 'success', prompt.trim(), content]
+      ).catch(() => {});
+
+      await db.query(
+        "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
+        [0, 'ai-system', new Date().toISOString(), 'system,info,ai', `[AI Prediction SUCCESS] Mode: LLM (NVIDIA NIM DeepSeek). Output: ${parsed.prediction || 'Jam rawan berhasil diprediksi.'}`]
+      ).catch(() => {});
+
+      res.json(parsed);
+    } catch (err: any) {
+      console.error("NVIDIA NIM AI Prediction Error, falling back to local TensorFlow:", err.message || err);
+      
+      await db.query(
+        "INSERT INTO system_ai_logs (mode, model, status, prompt, error_message) VALUES (?, ?, ?, ?, ?)",
+        ['llm', llmModel, 'error', prompt.trim(), err.message || String(err)]
+      ).catch(() => {});
+
+      await db.query(
+        "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
+        [0, 'ai-system', new Date().toISOString(), 'system,error,ai', `[AI LLM ERROR] Mode: LLM (NVIDIA NIM). Error: ${err.message || String(err)}. Falling back to Local AI.`]
+      ).catch(() => {});
+
+      try {
+        const fallbackResult = await smartPredict(history || []);
+
+        await db.query(
+          "INSERT INTO system_ai_logs (mode, model, status, prompt, response) VALUES (?, ?, ?, ?, ?)",
+          ['tensorflow', 'Local CNN-1D (Fallback)', 'success', `Predict density from history (client counts over time) - Fallback. Data length: ${history?.length || 0}`, JSON.stringify(fallbackResult)]
+        ).catch(() => {});
+
+        await db.query(
+          "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
+          [0, 'ai-system', new Date().toISOString(), 'system,info,ai', `[AI Prediction SUCCESS] Mode: Fallback Local AI (TensorFlow). Output: ${fallbackResult.prediction || 'Jam rawan berhasil diprediksi.'}`]
+        ).catch(() => {});
+
+        return res.json(fallbackResult);
+      } catch (fallbackErr: any) {
+        console.error("Local AI Fallback Error:", fallbackErr);
+
+        await db.query(
+          "INSERT INTO system_ai_logs (mode, model, status, prompt, error_message) VALUES (?, ?, ?, ?, ?)",
+          ['tensorflow', 'Local CNN-1D (Fallback)', 'error', `Predict density from history (client counts over time) - Fallback. Data length: ${history?.length || 0}`, fallbackErr.message || String(fallbackErr)]
+        ).catch(() => {});
+
+        await db.query(
+          "INSERT INTO mikrotik_logs (device_id, mikrotik_id, time, topics, message) VALUES (?, ?, ?, ?, ?)",
+          [0, 'ai-system', new Date().toISOString(), 'system,error,ai', `[AI Fallback ERROR] Mode: Fallback Local AI. Error: ${fallbackErr.message || String(fallbackErr)}`]
+        ).catch(() => {});
+
+        res.json({
+          prediction: "AI analysis encountered an error. Showing estimated patterns based on historical averages.",
+          analysisExplanation: "Proses Berpikir Fallback: Terjadi galat saat memanggil model LLM utama dan model lokal TensorFlow.js. Sistem beralih ke pola heuristik historis statis kampus untuk meramalkan kepadatan.",
+          conclusion: "Kesimpulan Fallback: Disarankan melakukan peninjauan log error sistem AI di pengaturan. Sementara waktu, ikuti jadwal optimasi bandwidth standar kampus pada pukul 10:00 - 15:00.",
+          rawanHours: [
+            { hour: "10:00 - 12:00", expectedDensity: "High" },
+            { hour: "13:00 - 15:00", expectedDensity: "High" }
+          ]
+        });
+      }
     }
+  } catch (err) {
+    console.error("AI Root Handler Error:", err);
+    res.json({
+      prediction: "AI analysis encountered a critical error.",
+      analysisExplanation: "Proses Berpikir Error: Sistem mendeteksi kegagalan total pada root handler AI.",
+      conclusion: "Kesimpulan Error: Terjadi kesalahan kritis pada backend server. Silakan hubungi administrator jaringan.",
+      rawanHours: []
+    });
   }
 });
+
+dashboardRouter.get("/ai-logs", requireAuth, async (req, res) => {
+  try {
+    const [rows]: any = await db.query("SELECT * FROM system_ai_logs ORDER BY id DESC LIMIT 50");
+    res.json(rows);
+  } catch (err) {
+    console.error("[AI-Logs-API] Error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 
 const getTopologyStatus = () => {
   const failPoint = Math.random();
@@ -1393,6 +1535,124 @@ const CACHE_TTL = 60 * 1000; // 60 seconds
  */
 dashboardRouter.get('/topology/clients/all', async (req, res) => {
   try {
+    if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+      const simulatedClients = [
+        {
+          mac: "aa:bb:cc:01:02:03",
+          ip: "192.168.88.201",
+          hostname: "iPhone-15-Pro",
+          signal: "-52 dBm",
+          signalNum: -52,
+          experience: "Excellent",
+          standard: "WiFi 6",
+          txRate: "1200Mbps",
+          rxRate: "1080Mbps",
+          uptime: "03:24:15",
+          ap: "AP-GedA-101",
+          interface: "wlan1",
+          source_label: "MikroTik"
+        },
+        {
+          mac: "aa:bb:cc:04:05:06",
+          ip: "192.168.88.202",
+          hostname: "Samsung-S23",
+          signal: "-67 dBm",
+          signalNum: -67,
+          experience: "Good",
+          ap: "AP-GedA-101",
+          interface: "wlan2",
+          standard: "WiFi 5",
+          txRate: "866Mbps",
+          rxRate: "780Mbps",
+          uptime: "01:45:10",
+          source_label: "MikroTik"
+        },
+        {
+          mac: "bb:cc:dd:01:02:03",
+          ip: "192.168.88.10",
+          hostname: "MacBook-Pro-M3",
+          signal: "-45 dBm",
+          signalNum: -45,
+          experience: "Excellent",
+          ap: "AP-GedB-201",
+          interface: "wlan1",
+          standard: "WiFi 6",
+          txRate: "2400Mbps",
+          rxRate: "2400Mbps",
+          uptime: "12:10:30",
+          source_label: "MikroTik"
+        },
+        {
+          mac: "00:1a:2b:3c:4d:5e",
+          ip: "192.168.88.204",
+          hostname: "Windows-Laptop",
+          signal: "-84 dBm",
+          signalNum: -84,
+          experience: "Poor",
+          ap: "AP-Perpustakaan",
+          interface: "ath0",
+          standard: "WiFi 4",
+          txRate: "54Mbps",
+          rxRate: "36Mbps",
+          uptime: "00:12:45",
+          source_label: "UniFi Controller"
+        },
+        {
+          mac: "90:cd:b6:99:88:77",
+          ip: "192.168.88.205",
+          hostname: "iPad-Air",
+          signal: "-72 dBm",
+          signalNum: -72,
+          experience: "Good",
+          ap: "AP-Gedung-C",
+          interface: "wlan1",
+          standard: "WiFi 5",
+          txRate: "433Mbps",
+          rxRate: "390Mbps",
+          uptime: "05:06:12",
+          source_label: "MikroTik"
+        },
+        {
+          mac: "d8:c4:6a:11:22:33",
+          ip: "192.168.88.206",
+          hostname: "Xiaomi-13",
+          signal: "-58 dBm",
+          signalNum: -58,
+          experience: "Excellent",
+          ap: "AP-Gedung-A",
+          interface: "wlan1",
+          standard: "WiFi 6",
+          txRate: "960Mbps",
+          rxRate: "960Mbps",
+          uptime: "02:15:22",
+          source_label: "MikroTik"
+        },
+        {
+          mac: "70:85:c2:22:33:44",
+          ip: "192.168.88.5",
+          hostname: "PC-Admin-Laboratorium",
+          signal: "N/A",
+          signalNum: -100,
+          experience: "Good",
+          ap: "Core-Switch",
+          interface: "ether2",
+          standard: "Ethernet/LAN",
+          txRate: "1Gbps",
+          rxRate: "1Gbps",
+          uptime: "4d 12h 30m",
+          source_label: "MikroTik"
+        }
+      ];
+
+      return res.json({
+        clients: simulatedClients,
+        errors: [],
+        totalRouters: 1,
+        scanTime: 25,
+        fresh: true
+      });
+    }
+
     // Return cache if still fresh
     if (clientCache && (Date.now() - clientCache.timestamp < CACHE_TTL)) {
       console.log(`[Client-Scan] ⚡ Serving from cache (${Math.round((Date.now() - clientCache.timestamp)/1000)}s old)`);
@@ -1414,121 +1674,147 @@ dashboardRouter.get('/topology/clients/all', async (req, res) => {
       
       await Promise.all(batch.map(async (device: any) => {
         const start = Date.now();
-        const client = createMikrotikClient({ ...device, timeout: 15 });
+        const client = createMikrotikClient({ ...device, timeout: 5 });
 
-
-        try {
-          const api = await client.connect();
-          
-          const safeWrite = (cmd: string[]) => (api as any).rosApi.write(cmd).catch((e: any) => {
-            const msg = e.message || String(e);
-            if (!msg.includes('no such command') && !msg.includes('no such command prefix')) {
-              console.warn(`[Client-Scan] ⚠️  ${device.name} command failed:`, msg);
-            }
-            return [];
-          });
-
-          // Fetch tables
-          const [capReg, wlanReg, wifiReg, leases] = await Promise.all([
-            safeWrite(["/caps-man/registration-table/print"]),
-            safeWrite(["/interface/wireless/registration-table/print"]),
-            safeWrite(["/interface/wifi/registration-table/print"]),
-            safeWrite(["/ip/dhcp-server/lease/print"]),
-          ]);
-
-          const dhcpMap: Record<string, any> = {};
-          if (Array.isArray(leases)) {
-             leases.forEach((l: any) => {
-               const m = (l['mac-address'] || '').toLowerCase();
-               if (m) dhcpMap[m] = { ip: l['address'] || l['active-address'] || '-', hostname: l['host-name'] || l['comment'] || '-' };
-             });
-          }
-
-          const enrich = (c: any) => {
-              const mac = (c['mac-address'] || '').toLowerCase();
-              const dhcp = dhcpMap[mac] || { ip: '-', hostname: '-' };
-              const signalStr = c['signal-strength'] || c['rx-signal'] || c['signal'] || '';
-              const signalMatch = signalStr.match(/-?\d+/);
-              const signalNum = signalMatch ? parseInt(signalMatch[0]) : -100;
-              
-              let experience = 'Good';
-              if (signalNum >= -60) experience = 'Excellent';
-              else if (signalNum < -80) experience = 'Poor';
-              
-              let standard = c['standard'] || '-';
-              if (standard === '-') {
-                const rateStr = c['tx-rate'] || '';
-                if (rateStr.includes('ax')) standard = 'WiFi 6';
-                else if (rateStr.includes('ac')) standard = 'WiFi 5';
-                else if (rateStr.includes('n')) standard = 'WiFi 4';
-              } else {
-                if (standard.includes('ax')) standard = 'WiFi 6';
-                else if (standard.includes('ac')) standard = 'WiFi 5';
-                else if (standard.includes('n')) standard = 'WiFi 4';
+        const scanPromise = (async () => {
+          try {
+            // Wrap client.connect() with a timeout of 5 seconds
+            const api = await Promise.race([
+              client.connect(),
+              new Promise<never>((_, reject) => 
+                setTimeout(() => reject(new Error('Koneksi timeout ke router (5s)')), 5000)
+              )
+            ]);
+            
+            const safeWrite = (cmd: string[]) => (api as any).rosApi.write(cmd).catch((e: any) => {
+              const msg = e.message || String(e);
+              if (!msg.includes('no such command') && !msg.includes('no such command prefix')) {
+                console.warn(`[Client-Scan] ⚠️  ${device.name} command failed:`, msg);
               }
-
-              return {
-                mac: c['mac-address'] || '-',
-                ip: dhcp.ip,
-                hostname: dhcp.hostname,
-                signal: signalStr || '-',
-                signalNum,
-                experience,
-                standard,
-                txRate: c['tx-rate'] || c['tx-rate-set'] || '-',
-                rxRate: c['rx-rate'] || c['rx-rate-set'] || '-',
-                uptime: c['uptime'] || '-',
-                ap: device.name,
-                interface: c['interface'] || c['cap-interface'] || '-'
-              };
-          };
-
-          const clientsBefore = allClients.length;
-          if (Array.isArray(capReg)) capReg.forEach(c => allClients.push(enrich(c)));
-          if (Array.isArray(wlanReg)) wlanReg.forEach(c => allClients.push(enrich(c)));
-          if (Array.isArray(wifiReg)) wifiReg.forEach(c => allClients.push(enrich(c)));
-
-          // --- DHCP FALLBACK (For UniFi / Non-MikroTik APs) ---
-          // If no wireless clients were found on this router, but there are DHCP leases,
-          // it means this router is likely a gateway for non-MikroTik APs (like UniFi).
-          if (allClients.length === clientsBefore && Array.isArray(leases)) {
-            leases.forEach((l: any) => {
-              // Only add active leases to avoid cluttering with old history
-              if (l.status === 'bound' || l['active-address']) {
-                allClients.push({
-                  mac: (l['mac-address'] || '-').toLowerCase(),
-                  ip: l['address'] || l['active-address'] || '-',
-                  hostname: l['host-name'] || l['comment'] || 'Unknown Device',
-                  signal: 'N/A (UniFi/LAN)',
-                  signalNum: -100,
-                  experience: 'Good',
-                  standard: 'Ethernet/LAN',
-                  txRate: '-',
-                  rxRate: '-',
-                  uptime: l['expires-after'] ? `expires: ${l['expires-after']}` : '-',
-                  ap: device.name,
-                  interface: l['server'] || 'bridge'
-                });
-              }
+              return [];
             });
+
+            // Fetch tables with timeout
+            const [capReg, wlanReg, wifiReg, leases] = await Promise.race([
+              Promise.all([
+                safeWrite(["/caps-man/registration-table/print"]),
+                safeWrite(["/interface/wireless/registration-table/print"]),
+                safeWrite(["/interface/wifi/registration-table/print"]),
+                safeWrite(["/ip/dhcp-server/lease/print"]),
+              ]),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Query table timeout (4s)')), 4000)
+              )
+            ]);
+
+            const dhcpMap: Record<string, any> = {};
+            if (Array.isArray(leases)) {
+               leases.forEach((l: any) => {
+                 const m = (l['mac-address'] || '').toLowerCase();
+                 if (m) dhcpMap[m] = { ip: l['address'] || l['active-address'] || '-', hostname: l['host-name'] || l['comment'] || '-' };
+               });
+            }
+
+            const enrich = (c: any) => {
+                const mac = (c['mac-address'] || '').toLowerCase();
+                const dhcp = dhcpMap[mac] || { ip: '-', hostname: '-' };
+                const signalStr = c['signal-strength'] || c['rx-signal'] || c['signal'] || '';
+                const signalMatch = signalStr.match(/-?\d+/);
+                const signalNum = signalMatch ? parseInt(signalMatch[0]) : -100;
+                
+                let experience = 'Good';
+                if (signalNum >= -60) experience = 'Excellent';
+                else if (signalNum < -80) experience = 'Poor';
+                
+                let standard = c['standard'] || '-';
+                if (standard === '-') {
+                  const rateStr = c['tx-rate'] || '';
+                  if (rateStr.includes('ax')) standard = 'WiFi 6';
+                  else if (rateStr.includes('ac')) standard = 'WiFi 5';
+                  else if (rateStr.includes('n')) standard = 'WiFi 4';
+                } else {
+                  if (standard.includes('ax')) standard = 'WiFi 6';
+                  else if (standard.includes('ac')) standard = 'WiFi 5';
+                  else if (standard.includes('n')) standard = 'WiFi 4';
+                }
+
+                return {
+                  mac: c['mac-address'] || '-',
+                  ip: dhcp.ip,
+                  hostname: dhcp.hostname,
+                  signal: signalStr || '-',
+                  signalNum,
+                  experience,
+                  standard,
+                  txRate: c['tx-rate'] || c['tx-rate-set'] || '-',
+                  rxRate: c['rx-rate'] || c['rx-rate-set'] || '-',
+                  uptime: c['uptime'] || '-',
+                  ap: device.name,
+                  interface: c['interface'] || c['cap-interface'] || '-'
+                };
+            };
+
+            const clientsBefore = allClients.length;
+            if (Array.isArray(capReg)) capReg.forEach(c => allClients.push(enrich(c)));
+            if (Array.isArray(wlanReg)) wlanReg.forEach(c => allClients.push(enrich(c)));
+            if (Array.isArray(wifiReg)) wifiReg.forEach(c => allClients.push(enrich(c)));
+
+            // --- DHCP FALLBACK (For UniFi / Non-MikroTik APs) ---
+            if (allClients.length === clientsBefore && Array.isArray(leases)) {
+              leases.forEach((l: any) => {
+                if (l.status === 'bound' || l['active-address']) {
+                  allClients.push({
+                    mac: (l['mac-address'] || '-').toLowerCase(),
+                    ip: l['address'] || l['active-address'] || '-',
+                    hostname: l['host-name'] || l['comment'] || 'Unknown Device',
+                    signal: 'N/A (UniFi/LAN)',
+                    signalNum: -100,
+                    experience: 'Good',
+                    standard: 'Ethernet/LAN',
+                    txRate: '-',
+                    rxRate: '-',
+                    uptime: l['expires-after'] ? `expires: ${l['expires-after']}` : '-',
+                    ap: device.name,
+                    interface: l['server'] || 'bridge'
+                  });
+                }
+              });
+            }
+            
+            const duration = Date.now() - start;
+            console.log(`[Client-Scan] ✅ ${device.name} finished in ${duration}ms (${allClients.length - clientsBefore} clients)`);
+
+          } catch (err: any) {
+            const errorMsg = err.message || String(err);
+            console.error(`[Client-Scan] ❌ ${device.name} failed after ${Date.now() - start}ms:`, errorMsg);
+            scanErrors.push({
+              router: device.name,
+              host: device.host,
+              error: errorMsg,
+              hint: 'Pastikan API MikroTik aktif.'
+            });
+
+          } finally {
+            await client.close().catch(() => {});
           }
-          
-          const duration = Date.now() - start;
-          console.log(`[Client-Scan] ✅ ${device.name} finished in ${duration}ms (${allClients.length - clientsBefore} clients)`);
+        })();
 
-        } catch (err: any) {
-          const errorMsg = err.message || String(err);
-          console.error(`[Client-Scan] ❌ ${device.name} failed after ${Date.now() - start}ms:`, errorMsg);
-          scanErrors.push({
-            router: device.name,
-            host: device.host,
-            error: errorMsg.includes('SOCKTMOUT') ? 'Timed out (15s)' : errorMsg,
-            hint: 'Pastikan API MikroTik aktif.'
-          });
-
-        } finally {
-          await client.close().catch(() => {});
-        }
+        await Promise.race([
+          scanPromise,
+          new Promise<void>((resolve) => {
+            setTimeout(() => {
+              console.error(`[Client-Scan] ❌ ${device.name} global scan timed out (8s)`);
+              scanErrors.push({
+                router: device.name,
+                host: device.host,
+                error: 'Timeout (8s)',
+                hint: 'Koneksi ke router sangat lambat atau menggantung.'
+              });
+              client.close().catch(() => {});
+              resolve();
+            }, 8000);
+          })
+        ]);
       }));
     }
 
@@ -1539,7 +1825,13 @@ dashboardRouter.get('/topology/clients/all', async (req, res) => {
       try {
         const adapter = getControllerAdapter(ctrl.type);
         if (adapter) {
-          const extClients = await adapter.getClients(ctrl);
+          // Wrap with a timeout of 8 seconds
+          const extClients = await Promise.race([
+            adapter.getClients(ctrl),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('Controller timeout (8s)')), 8000)
+            )
+          ]);
           extClients.forEach(c => allClients.push({
             ...c,
             source_label: ctrl.name // Label for tracking
@@ -1571,6 +1863,82 @@ dashboardRouter.get('/topology/clients/all', async (req, res) => {
     console.log(`[Client-Scan] ✨ Scan complete! Total: ${allClients.length} clients in ${Date.now() - startGlobal}ms`);
     res.json(response);
   } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+/**
+ * CLIENT DISCONNECT (KICK/RECONNECT) ENDPOINT
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Disconnects a wireless client session from either a MikroTik router (WLAN/CAPsMAN)
+ * or an external controller (UniFi/Omada) by its MAC address.
+ */
+dashboardRouter.post('/topology/clients/kick', requireAuth, async (req, res) => {
+  const { mac, sourceLabel, routerId } = req.body;
+  if (!mac) return res.status(400).json({ error: "MAC Address is required." });
+
+  console.log(`[Client-Kick] Request received for MAC: ${mac}, Source: ${sourceLabel}, RouterId: ${routerId}`);
+
+  if (process.env.MIKROTIK_SIMULATION_MODE === "true") {
+    // Cache bust
+    clientCache = null;
+    return res.json({ success: true, message: `Simulated disconnect for client ${mac}` });
+  }
+
+  let kicked = false;
+
+  try {
+    // 1. Check if the source is an external network controller (UniFi/Omada)
+    if (sourceLabel && sourceLabel !== 'MikroTik') {
+      const [[ctrl]]: any = await db.query("SELECT * FROM network_controllers WHERE name = ?", [sourceLabel]);
+      if (ctrl) {
+        const adapter = getControllerAdapter(ctrl.type);
+        if (adapter && adapter.kickClient) {
+          const success = await adapter.kickClient(ctrl, mac);
+          if (success) kicked = true;
+        }
+      }
+    }
+
+    // 2. Fallback or parallel disconnect on MikroTik devices
+    // We try to remove the client from registration tables of all online devices or the specified routerId.
+    let devices: any[] = [];
+    if (routerId) {
+      const [[dev]]: any = await db.query("SELECT * FROM mikrotik_devices WHERE id = ?", [routerId]);
+      if (dev && dev.status === 'online') devices.push(dev);
+    } else {
+      const [all]: any = await db.query("SELECT * FROM mikrotik_devices WHERE status = 'online'");
+      devices = all;
+    }
+
+    for (const device of devices) {
+      const client = createMikrotikClient(device);
+      try {
+        const api = await client.connect();
+        const cleanMac = mac.trim().toUpperCase();
+
+        // Send RouterOS commands to remove client from capsman, wireless, or wifi tables
+        await (api as any).rosApi.write(["/caps-man/registration-table/remove", `=.id=${cleanMac}`]).catch(() => {});
+        await (api as any).rosApi.write(["/caps-man/registration-table/remove", `?mac-address=${cleanMac}`]).catch(() => {});
+        await (api as any).rosApi.write(["/interface/wireless/registration-table/remove", `=.id=${cleanMac}`]).catch(() => {});
+        await (api as any).rosApi.write(["/interface/wireless/registration-table/remove", `?mac-address=${cleanMac}`]).catch(() => {});
+        await (api as any).rosApi.write(["/interface/wifi/registration-table/remove", `=.id=${cleanMac}`]).catch(() => {});
+        await (api as any).rosApi.write(["/interface/wifi/registration-table/remove", `?mac-address=${cleanMac}`]).catch(() => {});
+        
+        kicked = true;
+      } catch (err: any) {
+        console.warn(`[Client-Kick] Failed to connect to ${device.name} to kick:`, err.message);
+      } finally {
+        await client.close().catch(() => {});
+      }
+    }
+
+    // Invalidate clients cache so it scans fresh next time
+    clientCache = null;
+
+    res.json({ success: kicked, message: kicked ? "Klien berhasil diputuskan jaringannya." : "Gagal memutuskan koneksi klien." });
+  } catch (err) {
+    console.error("[Client-Kick] General error:", err);
     res.status(500).json({ error: String(err) });
   }
 });

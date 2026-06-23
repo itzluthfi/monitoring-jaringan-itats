@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
-import { Activity, Users, Router as RouterIcon, Wifi, BrainCircuit, Settings2, X, Bell, History, ArrowDown, ArrowUp, Map, Info, SlidersHorizontal, CheckSquare, Square, Maximize } from 'lucide-react';
+import { Activity, Users, Router as RouterIcon, Wifi, BrainCircuit, Settings2, X, Bell, History, ArrowDown, ArrowUp, Map, Info, SlidersHorizontal, CheckSquare, Square, Maximize, RefreshCw } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { MikroTikDevice } from '../types';
 import { Loader } from '../components/common/Loader';
@@ -24,7 +24,15 @@ export function DashboardView() {
   const [currentOnline, setCurrentOnline] = useState(0);
   const [chartData, setChartData] = useState<any[]>([]);
   const [aiPrediction, setAiPrediction] = useState<string>('');
+  const [aiExplanation, setAiExplanation] = useState<string>('');
+  const [aiConclusion, setAiConclusion] = useState<string>('');
   const [rawanHours, setRawanHours] = useState<any[]>([]);
+  const [aiMode, setAiMode] = useState<string>('llm');
+  const [aiModelName, setAiModelName] = useState<string>('meta/llama-3.3-70b-instruct');
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const aiLoadingRef = useRef(aiLoading);
+  aiLoadingRef.current = aiLoading;
+  const [aiRun, setAiRun] = useState<boolean>(false);
   const [devices, setDevices] = useState<MikroTikDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -71,6 +79,61 @@ export function DashboardView() {
   const [wifiBreakdown, setWifiBreakdown] = useState<{routerName: string, count: number}[]>([]);
   const [offlineApsData, setOfflineApsData] = useState<any[]>([]);
   const [loadingAps, setLoadingAps] = useState(false);
+
+  // Active Client Tracking States & Helpers
+  const [globalClients, setGlobalClients] = useState<any[]>([]);
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [loadingClients, setLoadingClients] = useState(false);
+  const [kickingMac, setKickingMac] = useState<string | null>(null);
+
+  const openWifiClients = async () => {
+    setActiveModal('wifi_clients');
+    setLoadingClients(true);
+    setClientSearchQuery('');
+    try {
+      const res = await authFetch('/api/topology/clients/all');
+      if (res.ok) {
+        const result = await res.json();
+        setGlobalClients(result.clients || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch all active clients:", err);
+    } finally {
+      setLoadingClients(false);
+    }
+  };
+
+  const kickClient = async (mac: string, sourceLabel: string) => {
+    if (!window.confirm(`Apakah Anda yakin ingin memutuskan jaringan klien dengan MAC ${mac}? Tindakan ini akan memaksa perangkat untuk memutuskan koneksi Wi-Fi dan menyambung ulang.`)) return;
+    setKickingMac(mac);
+    try {
+      const res = await authFetch('/api/topology/clients/kick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac, sourceLabel })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          // Re-fetch all clients to sync state
+          const refreshRes = await authFetch('/api/topology/clients/all');
+          if (refreshRes.ok) {
+            const result = await refreshRes.json();
+            setGlobalClients(result.clients || []);
+          }
+        } else {
+          alert(data.message || "Gagal memutuskan koneksi klien.");
+        }
+      } else {
+        alert("Gagal memproses pemutusan koneksi.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan koneksi.");
+    } finally {
+      setKickingMac(null);
+    }
+  };
 
   const toggleWidget = (key: string) => {
     setWidgetConfig((prev: any) => {
@@ -128,70 +191,139 @@ export function DashboardView() {
     }
   };
 
+  const runAiPrediction = async () => {
+    setAiLoading(true);
+    setAiPrediction('Menganalisis pola kepadatan trafik...');
+    setAiExplanation('');
+    setAiConclusion('');
+    try {
+      const res = await authFetch(`/api/prediction?device=${selectedDevice}`);
+      if (res.ok) {
+        const ai = await res.json();
+        setAiPrediction(ai.prediction || 'Analisis selesai.');
+        setAiExplanation(ai.analysisExplanation || '');
+        setAiConclusion(ai.conclusion || '');
+        setRawanHours(ai.rawanHours || []);
+        setAiRun(true);
+      } else {
+        setAiPrediction('Gagal melakukan analisis AI.');
+      }
+    } catch (e) {
+      console.error(e);
+      setAiPrediction('Terjadi kesalahan saat memanggil AI.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const fetchData = async () => {
     try {
-      const [statsRes, curRes, histRes, aiRes, devRes, notifRes, apHistRes] = await Promise.all([
-        authFetch('/api/mikrotiks/stats'),
-        authFetch(`/api/current-status?device=${selectedDevice}`),
-        authFetch(`/api/history?device=${selectedDevice}`),
-        authFetch(`/api/prediction?device=${selectedDevice}`),
-        authFetch('/api/mikrotiks'),
-        widgetConfig.notifications ? authFetch('/api/notifications?limit=5') : Promise.resolve(null),
-        widgetConfig.apHistory ? authFetch('/api/topology/logs') : Promise.resolve(null)
+      // Reset AI status on new device data fetch if not currently loading
+      if (!aiLoadingRef.current) {
+        setAiRun(false);
+        setAiPrediction('');
+        setAiExplanation('');
+        setAiConclusion('');
+        setRawanHours([]);
+      }
+
+      const [statsRes, curRes, histRes, devRes, notifRes, apHistRes, aiModeRes, aiModelRes, latestPredictionRes] = await Promise.all([
+        authFetch('/api/mikrotiks/stats').catch(e => { console.error(e); return null; }),
+        authFetch(`/api/current-status?device=${selectedDevice}`).catch(e => { console.error(e); return null; }),
+        authFetch(`/api/history?device=${selectedDevice}`).catch(e => { console.error(e); return null; }),
+        authFetch('/api/mikrotiks').catch(e => { console.error(e); return null; }),
+        widgetConfig.notifications ? authFetch('/api/notifications?limit=5').catch(e => { console.error(e); return null; }) : Promise.resolve(null),
+        widgetConfig.apHistory ? authFetch('/api/topology/logs').catch(e => { console.error(e); return null; }) : Promise.resolve(null),
+        authFetch('/api/settings/ai_mode').catch(e => { console.error(e); return null; }),
+        authFetch('/api/settings/ai_llm_model').catch(e => { console.error(e); return null; }),
+        !aiLoadingRef.current ? authFetch('/api/prediction/latest').catch(e => { console.error(e); return null; }) : Promise.resolve(null)
       ]);
 
-      if (statsRes.ok) setStats(await statsRes.json());
-      if (curRes.ok) {
-        const curData = await curRes.json();
-        setCurrentOnline(curData.count);
-        if (curData.breakdown) setWifiBreakdown(curData.breakdown);
+      if (statsRes && statsRes.ok) {
+        try {
+          setStats(await statsRes.json());
+        } catch (e) { console.error("Error parsing stats json:", e); }
       }
-      if (histRes.ok) {
-        const raw = await histRes.json();
-        const fmt = raw.map((d: any) => ({
-          time: new Date(d.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-          clients: parseInt(d.client_count) || 0
-        }));
-        setChartData(fmt);
+      if (curRes && curRes.ok) {
+        try {
+          const curData = await curRes.json();
+          setCurrentOnline(curData.count);
+          if (curData.breakdown) setWifiBreakdown(curData.breakdown);
+        } catch (e) { console.error("Error parsing current-status json:", e); }
       }
-      if (aiRes.ok) {
-        const ai = await aiRes.json();
-        setAiPrediction(ai.prediction || '');
-        setRawanHours(ai.rawanHours || []);
+      if (histRes && histRes.ok) {
+        try {
+          const raw = await histRes.json();
+          const fmt = raw.map((d: any) => ({
+            time: new Date(d.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+            clients: parseInt(d.client_count) || 0
+          }));
+          setChartData(fmt);
+        } catch (e) { console.error("Error parsing history json:", e); }
       }
-      if (devRes.ok) {
-        const devs = await devRes.json();
+      if (aiModeRes && aiModeRes.ok) {
+        try {
+          const d = await aiModeRes.json();
+          setAiMode(d.value || 'llm');
+        } catch (e) { console.error("Error parsing ai_mode json:", e); }
+      }
+      if (aiModelRes && aiModelRes.ok) {
+        try {
+          const d = await aiModelRes.json();
+          setAiModelName(d.value || 'meta/llama-3.3-70b-instruct');
+        } catch (e) { console.error("Error parsing ai_llm_model json:", e); }
+      }
+      if (!aiLoadingRef.current && latestPredictionRes && latestPredictionRes.ok) {
+        try {
+          const latestPred = await latestPredictionRes.json();
+          if (latestPred) {
+            setAiPrediction(latestPred.prediction || 'Analisis selesai.');
+            setAiExplanation(latestPred.analysisExplanation || '');
+            setAiConclusion(latestPred.conclusion || '');
+            setRawanHours(latestPred.rawanHours || []);
+            setAiRun(true);
+          }
+        } catch (e) { console.error("Error parsing latest prediction json:", e); }
+      }
+      if (devRes && devRes.ok) {
+        try {
+          const devs = await devRes.json();
 
-        // ── FIX #10: Auto-notifikasi jika device berubah dari online → offline ──
-        setDevices(prev => {
-          devs.forEach((d: any) => {
-            const wasPrev = prev.find((p: any) => p.id === d.id);
-            if (wasPrev && wasPrev.status === 'online' && d.status === 'offline') {
-              // Device baru saja offline — kirim notifikasi otomatis ke backend
-              authFetch('/api/notifications', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  type: 'error',
-                  title: `Device Offline: ${d.name}`,
-                  message: `Router ${d.name} (${d.host}) tidak dapat dijangkau.`,
-                }),
-              }).catch(() => {}); // silent fail — notifikasi tidak kritikal
-            }
+          // ── FIX #10: Auto-notifikasi jika device berubah dari online → offline ──
+          setDevices(prev => {
+            devs.forEach((d: any) => {
+              const wasPrev = prev.find((p: any) => p.id === d.id);
+              if (wasPrev && wasPrev.status === 'online' && d.status === 'offline') {
+                // Device baru saja offline — kirim notifikasi otomatis ke backend
+                authFetch('/api/notifications', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    type: 'error',
+                    title: `Device Offline: ${d.name}`,
+                    message: `Router ${d.name} (${d.host}) tidak dapat dijangkau.`,
+                  }),
+                }).catch(() => {}); // silent fail — notifikasi tidak kritikal
+              }
+            });
+            return devs;
           });
-          return devs;
-        });
 
-        if (widgetConfig.bandwidth) {
-          const targets = selectedDevice === 'all' ? devs : devs.filter((d:any) => d.id.toString() === selectedDevice);
-          fetchBandwidth(targets);
-        }
+          if (widgetConfig.bandwidth) {
+            const targets = selectedDevice === 'all' ? devs : devs.filter((d:any) => d.id.toString() === selectedDevice);
+            fetchBandwidth(targets);
+          }
+        } catch (e) { console.error("Error parsing devices json:", e); }
       }
       if (notifRes && notifRes.ok) {
-         setNotifications(await notifRes.json());
+        try {
+          setNotifications(await notifRes.json());
+        } catch (e) { console.error("Error parsing notifications json:", e); }
       }
       if (apHistRes && apHistRes.ok) {
-         setApHistory(await apHistRes.json());
+        try {
+          setApHistory(await apHistRes.json());
+        } catch (e) { console.error("Error parsing AP history json:", e); }
       }
     } catch (err) {
       console.error("Dashboard fetch error:", err);
@@ -272,7 +404,7 @@ export function DashboardView() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             
             <div 
-              onClick={() => setActiveModal('wifi_clients')}
+              onClick={openWifiClients}
               className="cursor-pointer hover:border-indigo-500/50 transition-colors bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                 <Users className="w-16 h-16 text-indigo-400" />
@@ -323,18 +455,69 @@ export function DashboardView() {
               </p>
             </div>
 
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 shadow-xl relative overflow-hidden group border border-white/10">
+            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 shadow-xl relative overflow-hidden group border border-white-fixed/10">
               <div className="absolute -right-6 -top-6 p-4 opacity-20 group-hover:scale-110 transition-transform duration-500">
-                <BrainCircuit className="w-32 h-32 text-white" />
+                <BrainCircuit className="w-32 h-32 text-white-fixed" />
               </div>
               <div className="flex items-center gap-4 mb-4 relative z-10">
-                <div className="p-3 bg-white/20 text-white rounded-xl backdrop-blur-sm"><BrainCircuit className="w-6 h-6" /></div>
-                <h3 className="font-semibold text-white">Gemini Nexus AI</h3>
+                <div className="p-3 bg-white-fixed/20 text-white-fixed rounded-xl backdrop-blur-sm"><BrainCircuit className="w-6 h-6" /></div>
+                <h3 className="font-semibold text-white-fixed">Nexus AI</h3>
               </div>
               <div className="relative z-10">
-                <p className="text-sm text-indigo-100 font-medium leading-relaxed line-clamp-3">
-                  {aiPrediction || "Analyzing density patterns..."}
-                </p>
+                {!aiRun && !aiLoading && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider">
+                      Mode: {aiMode === 'llm' ? `LLM Cloud (${aiModelName.split('/').pop()})` : 'Local AI (TensorFlow.js)'}
+                    </p>
+                    <p className="text-xs text-indigo-100 font-semibold leading-relaxed">
+                      Analisis jam rawan kepadatan trafik belum dijalankan.
+                    </p>
+                    <button
+                      onClick={runAiPrediction}
+                      className="w-full sm:w-auto px-4 py-2 bg-[#ffffff] text-[#4338ca] hover:bg-[#f3f4f6] font-extrabold rounded-xl text-xs transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                    >
+                      <BrainCircuit className="w-3.5 h-3.5 text-[#4338ca]" /> Jalankan Analisis AI
+                    </button>
+                  </div>
+                )}
+
+                {aiLoading && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider">
+                      Mode: {aiMode === 'llm' ? `LLM Cloud (${aiModelName.split('/').pop()})` : 'Local AI (TensorFlow.js)'}
+                    </p>
+                    <div className="flex items-center gap-2 text-indigo-100">
+                      <div className="w-4 h-4 border-2 border-[#ffffff]/30 border-t-[#ffffff] rounded-full animate-spin" />
+                      <p className="text-xs font-semibold">Menganalisis pola kepadatan trafik...</p>
+                    </div>
+                  </div>
+                )}
+
+                {aiRun && !aiLoading && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider flex items-center justify-between">
+                      <span>Mode: {aiMode === 'llm' ? `LLM Cloud (${aiModelName.split('/').pop()})` : 'Local AI (TensorFlow.js)'}</span>
+                      <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 px-1.5 py-0.5 rounded-full font-mono uppercase font-bold tracking-tighter">Selesai</span>
+                    </p>
+                    <p className="text-xs text-indigo-100 font-medium leading-relaxed line-clamp-3" title={aiPrediction}>
+                      {aiPrediction}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={runAiPrediction}
+                        className="px-3 py-1.5 bg-[#ffffff]/10 hover:bg-[#ffffff]/20 text-[#ffffff] font-bold rounded-lg text-[10px] transition-all border border-[#ffffff]/15 cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98]"
+                      >
+                        <RefreshCw className="w-3 h-3 text-[#ffffff]" /> Analisis Ulang
+                      </button>
+                      <button
+                        onClick={() => setActiveModal('ai_details')}
+                        className="px-3 py-1.5 bg-[#ffffff] hover:bg-[#f3f4f6] text-[#4338ca] font-bold rounded-lg text-[10px] transition-all shadow-md cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98]"
+                      >
+                        <BrainCircuit className="w-3 h-3 text-[#4338ca]" /> Detail Analisis
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -409,8 +592,13 @@ export function DashboardView() {
                     </div>
                   ))
                 ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-zinc-500">
-                    <p className="text-sm text-center px-4">Accumulating data points for next prediction cycle...</p>
+                  <div className="h-full flex flex-col items-center justify-center text-zinc-500 p-6 text-center">
+                    <BrainCircuit className="w-8 h-8 text-zinc-700 mb-2 animate-pulse" />
+                    <p className="text-xs font-semibold text-zinc-400">
+                      {aiLoading 
+                        ? 'Sedang menganalisis...' 
+                        : 'Silakan klik \'Jalankan Analisis AI\' di atas untuk memprediksi jam rawan kepadatan jaringan.'}
+                    </p>
                   </div>
                 )}
               </div>
@@ -600,7 +788,7 @@ export function DashboardView() {
                   {Object.keys(widgetConfig).map(key => {
                      const labels: Record<string, {title: string, desc: string}> = {
                        statsHero: { title: "Hero Summary Bar", desc: "Top summary cards for clients, routers, and AP counts." },
-                       aiPredictor: { title: "AI Congestion Predictor", desc: "Shows Gemini network predictions and insights." },
+                       aiPredictor: { title: "AI Congestion Predictor", desc: "Shows network predictions and insights." },
                        densityFlow: { title: "Campus Density Chart", desc: "Live graph displaying connection trends over time." },
                        bandwidth: { title: "Live Bandwidth Widget", desc: "Real-time interface usage tracking per-router and VLAN." },
                        notifications: { title: "Recent Alerts Widget", desc: "List of the latest system warnings and notifications." },
@@ -633,13 +821,13 @@ export function DashboardView() {
       {/* DASHBOARD DETAIL MODALS */}
       {activeModal !== 'none' && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm animate-in fade-in duration-200 p-4" onClick={() => setActiveModal('none')}>
-          <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+          <div className={`w-full bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] transition-all duration-300 ${activeModal === 'wifi_clients' ? 'max-w-5xl' : activeModal === 'ai_details' ? 'max-w-3xl' : 'max-w-2xl'}`} onClick={e => e.stopPropagation()}>
             
             <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/80 backdrop-blur-md">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   {activeModal === 'offline_routers' && <><RouterIcon className="w-5 h-5 text-emerald-400" /> {t('dashboard.offline')} {t('dashboard.coreRouters')}</>}
                   {activeModal === 'offline_aps' && <><Wifi className="w-5 h-5 text-sky-400" /> {t('dashboard.offline')} {t('dashboard.accessPoints')}</>}
-                  {activeModal === 'wifi_clients' && <><Users className="w-5 h-5 text-indigo-400" /> Client Distribution Breakdown</>}
+                  {activeModal === 'wifi_clients' && <><Users className="w-5 h-5 text-indigo-400" /> Pelacakan & Troubleshooting Klien Aktif</>}
                   {activeModal === 'ai_details' && <><BrainCircuit className="w-5 h-5 text-purple-400" /> AI Congestion Prediction List</>}
                   {activeModal === 'density_details' && <><Activity className="w-5 h-5 text-indigo-400" /> Campus Density History</>}
                 </h3>
@@ -651,15 +839,15 @@ export function DashboardView() {
                 {/* AI Prediction Details */}
                 {activeModal === 'ai_details' && (
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between bg-zinc-950/50 p-3 rounded-xl border border-zinc-800">
-                      <span className="text-xs text-zinc-500">Filter Density</span>
-                      <div className="flex gap-1.5">
+                    <div className="flex items-center justify-between bg-zinc-950/50 p-4 rounded-xl border border-zinc-800">
+                      <span className="text-sm font-semibold text-zinc-400">Filter Density</span>
+                      <div className="flex gap-2">
                         {['all', 'High', 'Medium', 'Low'].map(f => (
                           <button 
                             key={f} 
                             onClick={() => setAiFilter(f)}
-                            className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all ${
-                              aiFilter === f ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:text-zinc-300'
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                              aiFilter === f ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200'
                             }`}
                           >
                             {f.toUpperCase()}
@@ -669,9 +857,9 @@ export function DashboardView() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                        {rawanHours.filter(rh => aiFilter === 'all' || rh.expectedDensity === aiFilter).map((rh: any, i) => (
-                          <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-zinc-800/30 border border-zinc-700/50">
-                             <span className="text-sm font-mono text-zinc-200">{rh.hour}</span>
-                             <span className={`px-3 py-1 rounded-full text-[10px] font-bold ${
+                          <div key={i} className="flex items-center justify-between p-5 rounded-xl bg-zinc-800/30 border border-zinc-700/50">
+                             <span className="text-base font-mono font-semibold text-zinc-100">{rh.hour}</span>
+                             <span className={`px-4 py-1.5 rounded-full text-xs font-bold ${
                                 rh.expectedDensity === 'High' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
                                 rh.expectedDensity === 'Low' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                                 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
@@ -679,6 +867,30 @@ export function DashboardView() {
                           </div>
                        ))}
                     </div>
+
+                    {/* Proses Berpikir AI */}
+                    {aiExplanation && (
+                      <div className="p-5 rounded-xl bg-zinc-900 dark:bg-zinc-950/60 border border-zinc-700 dark:border-zinc-800 space-y-3 mt-4 text-left">
+                        <h4 className="text-sm font-bold text-zinc-300 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                          <span>🧠</span> Proses Berpikir AI
+                        </h4>
+                        <p className="text-sm text-zinc-200 dark:text-zinc-300 leading-relaxed font-sans whitespace-pre-line">
+                          {aiExplanation}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Kesimpulan AI */}
+                    {aiConclusion && (
+                      <div className="p-5 rounded-xl bg-indigo-900/30 dark:bg-indigo-950/30 border border-indigo-500/40 dark:border-indigo-900/50 space-y-3 mt-3 text-left">
+                        <h4 className="text-sm font-bold text-indigo-300 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+                          <span>💡</span> Kesimpulan & Rekomendasi
+                        </h4>
+                        <p className="text-sm text-indigo-100 dark:text-indigo-100 leading-relaxed font-sans whitespace-pre-line">
+                          {aiConclusion}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -715,17 +927,131 @@ export function DashboardView() {
                   </div>
                 )}
 
-                {/* WIfi Clients Breakdown */}
+                {/* WIfi Clients Breakdown & Tracking */}
                 {activeModal === 'wifi_clients' && (
-                  <div className="space-y-3">
-                     {wifiBreakdown.length > 0 ? wifiBreakdown.map((b, i) => (
-                        <div key={i} className="flex items-center justify-between bg-zinc-800/40 border border-zinc-700/50 p-4 rounded-xl hover:bg-zinc-800/80 transition-colors">
-                           <span className="font-semibold text-zinc-200">{b.routerName}</span>
-                           <span className="px-3 py-1 bg-indigo-500/20 text-indigo-400 font-bold rounded-lg text-sm">{b.count} Users</span>
+                  <div className="space-y-4">
+                    {/* Search and stats bar */}
+                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-zinc-950/40 p-4 rounded-2xl border border-zinc-800">
+                      <div className="relative w-full sm:max-w-md">
+                        <input
+                          type="text"
+                          value={clientSearchQuery}
+                          onChange={(e) => setClientSearchQuery(e.target.value)}
+                          placeholder="Cari MAC, IP, Nama Perangkat, AP, atau SSID..."
+                          className="w-full bg-zinc-900 border border-zinc-700 text-white rounded-xl py-2 pl-3 pr-10 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-zinc-550"
+                        />
+                        {clientSearchQuery && (
+                          <button
+                            onClick={() => setClientSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white text-xs"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-right text-[10px] text-zinc-500 font-mono tracking-tight shrink-0">
+                        Total Aktif: <span className="text-white font-bold">{globalClients.length}</span> Klien
+                      </div>
+                    </div>
+
+                    {/* Loading state */}
+                    {loadingClients ? (
+                      <div className="py-20 flex flex-col items-center justify-center gap-3">
+                        <Loader message="Memindai seluruh klien aktif di jaringan..." />
+                      </div>
+                    ) : (
+                      <div className="border border-zinc-800 rounded-2xl overflow-hidden bg-zinc-950/20">
+                        <div className="max-h-[50vh] overflow-y-auto custom-scrollbar">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-zinc-950/60 border-b border-zinc-800 text-zinc-400 font-mono text-[9px] uppercase tracking-wider">
+                                <th className="p-3">Perangkat / IP</th>
+                                <th className="p-3">MAC Address</th>
+                                <th className="p-3">SSID / Sinyal</th>
+                                <th className="p-3">Titik Akses (AP)</th>
+                                <th className="p-3 text-center">Aksi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-850">
+                              {(() => {
+                                const q = clientSearchQuery.toLowerCase().trim();
+                                const filtered = globalClients.filter(c => 
+                                  !q ||
+                                  (c.hostname || '').toLowerCase().includes(q) ||
+                                  (c.ip || '').toLowerCase().includes(q) ||
+                                  (c.mac || '').toLowerCase().includes(q) ||
+                                  (c.ap || '').toLowerCase().includes(q) ||
+                                  (c.interface || '').toLowerCase().includes(q)
+                                );
+
+                                if (filtered.length === 0) {
+                                  return (
+                                    <tr>
+                                      <td colSpan={5} className="p-10 text-center text-zinc-500">
+                                        Tidak ada data klien yang cocok dengan kata kunci pencarian.
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
+                                return filtered.map((c, idx) => (
+                                  <tr key={idx} className="hover:bg-zinc-800/25 transition-colors">
+                                    <td className="p-3">
+                                      <span className="font-bold text-zinc-200 block truncate max-w-[150px]" title={c.hostname}>
+                                        {c.hostname === '-' || !c.hostname ? 'Device Unnamed' : c.hostname}
+                                      </span>
+                                      <span className="text-[10px] text-zinc-550 font-mono block">{c.ip}</span>
+                                    </td>
+                                    <td className="p-3">
+                                      <span className="font-mono text-zinc-400 text-[10px]">{c.mac.toUpperCase()}</span>
+                                    </td>
+                                    <td className="p-3">
+                                      <span className="font-semibold text-indigo-400 block truncate max-w-[100px]" title={c.interface}>
+                                        {c.interface === '-' ? 'LAN' : c.interface}
+                                      </span>
+                                      <span className={`text-[10px] font-mono block ${
+                                        c.experience === 'Excellent' ? 'text-emerald-400' :
+                                        c.experience === 'Poor' ? 'text-rose-400' : 'text-amber-400'
+                                      }`}>
+                                        {c.signal}
+                                      </span>
+                                    </td>
+                                    <td className="p-3">
+                                      <span className="text-zinc-300 block truncate max-w-[150px]" title={c.ap}>
+                                        {c.ap}
+                                      </span>
+                                      <span className="text-[9px] text-zinc-500 uppercase tracking-tighter block">{c.source_label || 'MikroTik'}</span>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        <button
+                                          onClick={() => {
+                                            setActiveModal('none');
+                                            navigate('/admin/topology');
+                                          }}
+                                          className="p-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-750 transition-colors"
+                                          title="Lacak di Peta Topologi"
+                                        >
+                                          <Map className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => kickClient(c.mac, c.source_label || 'MikroTik')}
+                                          disabled={kickingMac === c.mac}
+                                          className="p-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded border border-red-500/20 disabled:opacity-50 transition-colors"
+                                          title="Putuskan Koneksi Jaringan (Kick)"
+                                        >
+                                          {kickingMac === c.mac ? '...' : '🚫'}
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ));
+                              })()}
+                            </tbody>
+                          </table>
                         </div>
-                     )) : (
-                        <div className="text-center text-zinc-500 py-10">No client data available.</div>
-                     )}
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -30,4 +30,5 @@ export interface IControllerAdapter {
   type: string;
   testConnection(config: any): Promise<ControllerStats>;
   getClients(config: any): Promise<ExternalClient[]>;
+  kickClient?(config: any, mac: string): Promise<boolean>;
 }

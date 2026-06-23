@@ -112,4 +112,19 @@ export class UnifiControllerAdapter implements IControllerAdapter {
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   }
+
+  async kickClient(config: any, mac: string): Promise<boolean> {
+    try {
+      const site = config.extra_config?.site || 'default';
+      await this.fetchWithAuth(config, '/cmd/stamgr', 'POST', {
+        cmd: 'kick-sta',
+        mac: mac.toLowerCase()
+      });
+      console.log(`[Unifi-Adapter] Successfully kicked client ${mac} on site ${site}`);
+      return true;
+    } catch (e: any) {
+      console.error(`[Unifi-Adapter] Failed to kick client ${mac}:`, e.message);
+      return false;
+    }
+  }
 }
